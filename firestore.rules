@@ -48,6 +48,14 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
+
+    function normalizeEmail(email) {
+      return email is string ? email.lower() : '';
+    }
+
+    function isNormalizedEmail(email) {
+      return email is string && email == normalizeEmail(email);
+    }
     
     function isOwner(householdId) {
       return isAuthenticated() && 
@@ -56,11 +64,16 @@ service cloud.firestore {
 
     function isCook(householdId) {
       return isAuthenticated() && 
-             get(/databases/$(database)/documents/households/$(householdId)).data.cookEmail == request.auth.token.email;
+             normalizeEmail(get(/databases/$(database)/documents/households/$(householdId)).data.cookEmail) != '' &&
+             normalizeEmail(get(/databases/$(database)/documents/households/$(householdId)).data.cookEmail) == normalizeEmail(request.auth.token.email);
     }
 
     function isHouseholdMember(householdId) {
       return isOwner(householdId) || isCook(householdId);
+    }
+
+    function effectiveRole(householdId) {
+      return isCook(householdId) ? 'cook' : (isOwner(householdId) ? 'owner' : '');
     }
 
     function isValidString(val, minLen, maxLen) {
@@ -103,25 +116,66 @@ service cloud.firestore {
              data.role in ['owner', 'cook'];
     }
 
+    function isValidHouseholdWrite(data) {
+      return data.ownerId is string &&
+             isValidString(data.ownerId, 1, 128) &&
+             (
+               !('cookEmail' in data) ||
+               (data.cookEmail is string && (data.cookEmail == '' || isNormalizedEmail(data.cookEmail)))
+             );
+    }
+
+    function isValidInventoryWrite(householdId, data) {
+      return !('updatedBy' in data) || data.updatedBy == effectiveRole(householdId);
+    }
+
+    function pantryLogMatchesInventoryWrite(householdId, data) {
+      return data.role == effectiveRole(householdId) &&
+             existsAfter(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)) &&
+             (
+               (
+                 exists(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)) &&
+                 get(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)).data.status == data.oldStatus
+               ) ||
+               (
+                 !exists(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)) &&
+                 data.oldStatus == 'in-stock'
+               )
+             ) &&
+             getAfter(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)).data.name == data.itemName &&
+             getAfter(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)).data.status == data.newStatus &&
+             getAfter(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)).data.lastUpdated == data.timestamp &&
+             getAfter(/databases/$(database)/documents/households/$(householdId)/inventory/$(data.itemId)).data.updatedBy == data.role;
+    }
+
     match /households/{householdId} {
       allow read: if isAuthenticated() && (
         resource.data.ownerId == request.auth.uid || 
-        resource.data.cookEmail == request.auth.token.email
+        (
+          normalizeEmail(resource.data.cookEmail) != '' &&
+          normalizeEmail(resource.data.cookEmail) == normalizeEmail(request.auth.token.email)
+        )
       );
       
       allow create: if isAuthenticated() && 
-                    request.resource.data.ownerId == request.auth.uid;
+                    request.resource.data.ownerId == request.auth.uid &&
+                    isValidHouseholdWrite(request.resource.data);
                     
       allow update: if isAuthenticated() && 
                     resource.data.ownerId == request.auth.uid &&
-                    request.resource.data.ownerId == resource.data.ownerId;
+                    request.resource.data.ownerId == resource.data.ownerId &&
+                    isValidHouseholdWrite(request.resource.data);
                     
       allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
 
       match /inventory/{itemId} {
         allow read: if isHouseholdMember(householdId);
-        allow create: if isHouseholdMember(householdId) && isValidInventoryItem(request.resource.data);
-        allow update: if isHouseholdMember(householdId) && isValidInventoryItem(request.resource.data);
+        allow create: if isHouseholdMember(householdId) &&
+                         isValidInventoryItem(request.resource.data) &&
+                         isValidInventoryWrite(householdId, request.resource.data);
+        allow update: if isHouseholdMember(householdId) &&
+                         isValidInventoryItem(request.resource.data) &&
+                         isValidInventoryWrite(householdId, request.resource.data);
         allow delete: if isOwner(householdId);
       }
       
@@ -134,7 +188,9 @@ service cloud.firestore {
       
       match /logs/{logId} {
         allow read: if isHouseholdMember(householdId);
-        allow create: if isHouseholdMember(householdId) && isValidPantryLog(request.resource.data);
+        allow create: if isHouseholdMember(householdId) &&
+                         isValidPantryLog(request.resource.data) &&
+                         pantryLogMatchesInventoryWrite(householdId, request.resource.data);
         allow update: if false; // Logs are immutable
         allow delete: if isOwner(householdId);
       }
