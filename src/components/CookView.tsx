@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sun, Moon, AlertCircle, CheckCircle2, Search, Mic, Globe, Info, ShoppingCart, MessageSquarePlus, Check } from 'lucide-react';
 import { MealPlan, InventoryItem, InventoryStatus, Language } from '../types';
 import { parseCookVoiceInput } from '../services/ai';
+import { getLocalDateKey } from '../utils/date';
 
 interface Props {
   meals: Record<string, MealPlan>;
@@ -61,11 +62,12 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
   const [aiInput, setAiInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteValue, setNoteValue] = useState('');
 
   const t = DICT[lang];
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateKey(new Date());
   const todaysMeals = meals[today] || { morning: t.notPlanned, evening: t.notPlanned, notes: undefined, leftovers: undefined };
 
   const filteredInventory = inventory.filter(item => 
@@ -75,6 +77,7 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
   );
 
   const showToast = (message: string) => {
+    setErrorMessage(null);
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 3000);
   };
@@ -109,28 +112,41 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
     if (!aiInput.trim()) return;
     
     setIsProcessing(true);
-    const result = await parseCookVoiceInput(aiInput, inventory, lang);
-    
-    if (!result.understood) {
-      alert(result.message || (lang === 'hi' ? 'कुछ समझ नहीं आया। कृपया फिर से कोशिश करें।' : 'Could not understand. Please try again.'));
-    } else {
-      let updatedCount = 0;
-      result.updates.forEach(update => {
-        onUpdateInventory(update.itemId, update.newStatus as InventoryStatus, update.requestedQuantity);
-        updatedCount++;
-      });
-      
-      result.unlistedItems.forEach(item => {
-        onAddUnlistedItem(item.name, item.status as InventoryStatus, item.category, item.requestedQuantity);
-        updatedCount++;
-      });
+    setErrorMessage(null);
+    try {
+      const result = await parseCookVoiceInput(aiInput, inventory, lang);
 
-      if (updatedCount > 0) {
-        alert(t.success + (result.unlistedItems.length > 0 ? ` (${result.unlistedItems.length} new items requested)` : ''));
-        setAiInput('');
+      if (!result.understood) {
+        setErrorMessage(result.message || (lang === 'hi' ? 'कुछ समझ नहीं आया। कृपया फिर से कोशिश करें।' : 'Could not understand. Please try again.'));
       } else {
-        alert(lang === 'hi' ? 'कोई बदलाव नहीं हुआ।' : 'No changes made.');
+        let updatedCount = 0;
+        const inventoryIds = new Set(inventory.map((item) => item.id));
+        const validUpdates = result.updates.filter((update) => inventoryIds.has(update.itemId));
+
+        validUpdates.forEach(update => {
+          onUpdateInventory(update.itemId, update.newStatus as InventoryStatus, update.requestedQuantity);
+          updatedCount++;
+        });
+
+        result.unlistedItems.forEach(item => {
+          onAddUnlistedItem(item.name, item.status as InventoryStatus, item.category, item.requestedQuantity);
+          updatedCount++;
+        });
+
+        if (result.updates.length !== validUpdates.length) {
+          setErrorMessage(lang === 'hi' ? 'कुछ आइटम मिलान नहीं हुए। बाकी अपडेट कर दिए गए।' : 'Some items could not be matched; remaining updates were applied.');
+        }
+
+        if (updatedCount > 0) {
+          showToast(t.success + (result.unlistedItems.length > 0 ? ` (${result.unlistedItems.length} new items requested)` : ''));
+          setAiInput('');
+        } else {
+          setErrorMessage(lang === 'hi' ? 'कोई बदलाव नहीं हुआ।' : 'No changes made.');
+        }
       }
+    } catch (error) {
+      console.error('cook_ai_submit_failed', { error, aiInputLength: aiInput.length, lang });
+      setErrorMessage(lang === 'hi' ? 'AI अपडेट नहीं हो पाया। दोबारा कोशिश करें।' : 'AI update failed. Please retry.');
     }
     setIsProcessing(false);
   };
@@ -227,6 +243,12 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
         <p className="text-sm text-orange-100 mt-3 opacity-80">
           Tip: Type something like "Tamatar aur atta khatam ho gaya hai"
         </p>
+        {errorMessage && (
+          <div className="mt-4 rounded-xl bg-red-50 text-red-700 border border-red-200 px-4 py-3 text-sm font-medium flex items-start gap-2">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
       </section>
 
       {/* Pantry Quick Update */}
