@@ -1,49 +1,229 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Rasoi Planner
 
-# Run and deploy your AI Studio app
+Rasoi Planner is a shared kitchen workflow app for Indian households.
+It helps an **Owner** plan meals and manage pantry inventory, while a **Cook** updates stock status in real time (including AI-assisted pantry updates).
 
-This contains everything you need to run your app locally.
+## Who This Is For (ICP)
 
-View your app in AI Studio: https://ai.studio/apps/3900af62-0bf5-496a-a136-d1c8a0c4b8bd
+### Primary product users
+- **Household Owner**: plans meals, manages pantry, invites/removes cook access, verifies anomalies.
+- **Household Cook**: checks daily menu, marks inventory as low/out/in-stock, adds quantity notes, uses AI assistant.
 
-## Run Locally
+### Technical stakeholders
+- **Contributor**: develops features, fixes bugs, updates rules/tests.
+- **QA / Reviewer**: validates role behavior, security rules, and end-to-end journeys.
 
-**Prerequisites:**  Node.js
+## What Testers Should Validate
 
+| Role | Must Validate |
+| --- | --- |
+| Product reviewer | Owner and Cook flows are understandable and usable on local app UI |
+| QA / E2E reviewer | `npm run e2e` scenarios pass and `test/e2e/artifacts/summary.json` reports `overallPass: true` |
+| Security reviewer | `npm run rules:test` passes Firestore access-control constraints |
+| Contributor (before merge) | `npm run verify:local` passes (`lint`, `build`, rules tests, E2E) |
+
+## Stack and Runtime Overview
+
+- Frontend: React 19 + Vite + Tailwind
+- Backend endpoint: Vercel serverless function at `POST /api/ai/parse`
+- Data/Auth: Firebase Auth (Google) + Firestore
+- AI: Gemini model via `@google/genai`
+- Tests:
+  - Firestore rules tests via Firebase Emulator
+  - Browser E2E via Puppeteer + local mocks
+
+## Prerequisites
+
+Install these before local setup:
+
+- Node.js `18+` (LTS recommended)
+- npm (comes with Node.js)
+- Java `17+` (required by Firestore Emulator used in `rules:test`)
+- A Chromium/Chrome browser (for local sign-in popup and E2E)
+
+No global Firebase CLI install is required because `firebase-tools` is in project `devDependencies`.
+
+## Local Setup
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
 
-## Local End-to-End Check Before Vercel
+```bash
+npm install
+```
 
-Run the full local verification flow (type-check + production build + Firestore rules tests on emulator + end-to-end tests):
+2. Create local env file from example:
 
-`npm run verify:local`
+```bash
+cp .env.example .env.local
+```
 
-Firestore rules tests require Java (17 or newer) because the Firestore Emulator runs on Java.
+3. Set `GEMINI_API_KEY` in `.env.local`.
 
-You can run Firestore rules tests independently:
+4. Start the app:
 
-`npm run rules:test`
+```bash
+npm run dev
+```
 
-The E2E summary is written to:
+App runs at `http://0.0.0.0:3000` (or `http://localhost:3000`).
 
-`test/e2e/artifacts/summary.json`
+## Firebase Auth Local Checklist
 
-## Localhost Firebase Auth Checklist
+Before validating sign-in flows, confirm in Firebase Console:
 
-Before final deploy validation, confirm these in Firebase Console:
+1. **Authentication -> Sign-in method -> Google** is enabled.
+2. **Authentication -> Settings -> Authorized domains** includes `localhost` and `127.0.0.1` (if you use that host).
+3. Google popup sign-in works in local browser.
+4. Owner can invite/remove cook.
+5. Invited cook gets access.
+6. Removed cook loses access immediately.
 
-1. Authentication → Sign-in method → Google provider is enabled.
-2. Authentication → Settings → Authorized domains contains `localhost`.
-3. If you use `127.0.0.1` locally, add `127.0.0.1` to Authorized domains as well.
-4. Run `npm run dev` and confirm Google popup sign-in works.
-5. Validate role permissions:
-   - Owner can invite/remove cook.
-   - Invited cook gets access.
-   - Removed cook loses access immediately.
+## Command Runbook (Exact Scripts)
+
+All scripts below are defined in `package.json`.
+
+- Start dev server:
+
+```bash
+npm run dev
+```
+
+- Start E2E-focused dev server config:
+
+```bash
+npm run dev:e2e
+```
+
+- Type-check:
+
+```bash
+npm run lint
+```
+
+- Production build:
+
+```bash
+npm run build
+```
+
+- Preview build output:
+
+```bash
+npm run preview
+```
+
+- Clean build output:
+
+```bash
+npm run clean
+```
+
+- Firestore rules tests (emulator-backed):
+
+```bash
+npm run rules:test
+```
+
+- End-to-end tests:
+
+```bash
+npm run e2e
+```
+
+- Full local verification before release:
+
+```bash
+npm run verify:local
+```
+
+## Architecture Snapshot
+
+### Core collections
+- `households/{householdId}`
+- `households/{householdId}/inventory/{itemId}`
+- `households/{householdId}/meals/{YYYY-MM-DD}`
+- `households/{householdId}/logs/{logId}`
+
+### Owner vs Cook permissions
+Owner permissions:
+- create/update/delete inventory
+- create/update meals
+- invite or remove cook (`cookEmail`)
+- read all household data
+
+Cook permissions:
+- read household, inventory, meals, logs
+- update inventory status and request quantities
+- cannot modify meals or delete inventory
+
+These constraints are enforced in `firestore.rules` and validated by `test/rules/run.ts`.
+
+## AI Endpoint Contract
+
+### Endpoint
+- `POST /api/ai/parse`
+
+### Request body
+
+```json
+{
+  "input": "tamatar khatam ho gaya",
+  "inventory": [{ "id": "9", "name": "Tomatoes", "nameHi": "टमाटर" }],
+  "lang": "hi"
+}
+```
+
+### Success response (shape)
+
+```json
+{
+  "understood": true,
+  "message": "optional",
+  "updates": [{ "itemId": "9", "newStatus": "out", "requestedQuantity": "1kg" }],
+  "unlistedItems": [{ "name": "Dhania", "status": "low", "category": "Veggies", "requestedQuantity": "2 bunch" }]
+}
+```
+
+### Failure behavior
+- Invalid request body: HTTP `400`
+- Missing `GEMINI_API_KEY`: HTTP `503`
+- AI/runtime failures: HTTP `500` with safe fallback message
+- Client uses safe fallback message if response parsing/validation fails
+
+## Testing and Artifacts
+
+- Firestore rules tests entry: `test/rules/run.ts`
+- E2E runner: `test/e2e/run.mjs`
+- E2E mock server config: `test/e2e/vite.e2e.config.ts`
+- E2E summary output: `test/e2e/artifacts/summary.json`
+
+## Deployment Notes (Vercel + Firebase)
+
+### Vercel
+- Ensure rewrites in `vercel.json` are preserved: `/api/*` -> `/api/*` and `/*` -> `/index.html`.
+- Set `GEMINI_API_KEY` in Vercel project environment variables.
+
+### Firebase
+- Firestore security rules source: `firestore.rules`
+- Local emulator config: `firebase.json`
+- Confirm production Firebase Auth domain setup before release (Google provider and authorized domains)
+
+## Troubleshooting
+
+### `GEMINI_API_KEY is not configured for the AI parse endpoint`
+- Set `GEMINI_API_KEY` in `.env.local` (local) or Vercel environment settings (deploy).
+
+### Firestore rules tests fail with Java/emulator error
+- Install Java 17+ and confirm `java -version` resolves correctly in shell.
+
+### Google sign-in popup fails locally
+- Add `localhost` / `127.0.0.1` to Firebase Auth authorized domains.
+- Ensure browser popup blocking is disabled for local app.
+
+### E2E fails because browser path cannot be resolved
+- Install Chrome/Chromium, or set `PUPPETEER_EXECUTABLE_PATH` to a valid browser binary.
+
+### AI updates do not change pantry
+- Check browser network call to `/api/ai/parse`.
+- Confirm request has `input`, `inventory`, and `lang`.
+- Confirm response passes schema validation (`understood`, `updates`, `unlistedItems`).
