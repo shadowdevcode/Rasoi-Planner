@@ -1,0 +1,151 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: households/{householdId}
+    // Document ID: auto-generated or owner's uid
+    // Fields:
+    //   - ownerId: string (required)
+    //   - cookEmail: string (optional)
+    //
+    // Collection: households/{householdId}/inventory
+    // Document ID: auto-generated or custom string
+    // Fields:
+    //   - name: string (required, max 100 chars)
+    //   - nameHi: string (optional, max 100 chars)
+    //   - category: string (required, max 50 chars)
+    //   - status: string (required, 'in-stock', 'low', 'out')
+    //   - icon: string (required, max 10 chars)
+    //   - lastUpdated: string (optional, ISO date)
+    //   - updatedBy: string (optional, 'owner', 'cook')
+    //   - verificationNeeded: boolean (optional)
+    //   - anomalyReason: string (optional, max 500 chars)
+    //   - defaultQuantity: string (optional, max 50 chars)
+    //   - requestedQuantity: string (optional, max 50 chars)
+    //
+    // Collection: households/{householdId}/meals
+    // Document ID: YYYY-MM-DD string
+    // Fields:
+    //   - morning: string (optional, max 1000 chars)
+    //   - evening: string (optional, max 1000 chars)
+    //   - notes: string (optional, max 1000 chars)
+    //   - leftovers: string (optional, max 1000 chars)
+    //
+    // Collection: households/{householdId}/logs
+    // Document ID: auto-generated
+    // Fields:
+    //   - itemId: string (required, max 100 chars)
+    //   - itemName: string (required, max 100 chars)
+    //   - oldStatus: string (required, 'in-stock', 'low', 'out', '')
+    //   - newStatus: string (required, 'in-stock', 'low', 'out')
+    //   - timestamp: string (required, ISO date)
+    //   - role: string (required, 'owner', 'cook')
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(householdId) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/households/$(householdId)).data.ownerId == request.auth.uid;
+    }
+
+    function isCook(householdId) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/households/$(householdId)).data.cookEmail == request.auth.token.email;
+    }
+
+    function isHouseholdMember(householdId) {
+      return isOwner(householdId) || isCook(householdId);
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(val, minLen, maxLen) {
+      return val == null || (val is string && val.size() >= minLen && val.size() <= maxLen);
+    }
+
+    function isValidInventoryItem(data) {
+      return data.keys().hasAll(['name', 'category', 'status', 'icon']) &&
+             isValidString(data.name, 1, 100) &&
+             isValidString(data.category, 1, 50) &&
+             data.status in ['in-stock', 'low', 'out'] &&
+             isValidString(data.icon, 1, 10) &&
+             (!('nameHi' in data) || isValidOptionalString(data.nameHi, 0, 100)) &&
+             (!('lastUpdated' in data) || data.lastUpdated is string) &&
+             (!('updatedBy' in data) || data.updatedBy in ['owner', 'cook']) &&
+             (!('verificationNeeded' in data) || data.verificationNeeded is bool) &&
+             (!('anomalyReason' in data) || isValidOptionalString(data.anomalyReason, 0, 500)) &&
+             (!('defaultQuantity' in data) || isValidOptionalString(data.defaultQuantity, 0, 50)) &&
+             (!('requestedQuantity' in data) || isValidOptionalString(data.requestedQuantity, 0, 50));
+    }
+
+    function isValidMealPlan(data) {
+      return (!('morning' in data) || isValidOptionalString(data.morning, 0, 1000)) &&
+             (!('evening' in data) || isValidOptionalString(data.evening, 0, 1000)) &&
+             (!('notes' in data) || isValidOptionalString(data.notes, 0, 1000)) &&
+             (!('leftovers' in data) || isValidOptionalString(data.leftovers, 0, 1000));
+    }
+
+    function isValidPantryLog(data) {
+      return data.keys().hasAll(['itemId', 'itemName', 'oldStatus', 'newStatus', 'timestamp', 'role']) &&
+             isValidString(data.itemId, 1, 100) &&
+             isValidString(data.itemName, 1, 100) &&
+             data.oldStatus in ['in-stock', 'low', 'out', ''] &&
+             data.newStatus in ['in-stock', 'low', 'out'] &&
+             data.timestamp is string &&
+             data.role in ['owner', 'cook'];
+    }
+
+    match /households/{householdId} {
+      allow read: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid || 
+        resource.data.cookEmail == request.auth.token.email
+      );
+      
+      allow create: if isAuthenticated() && 
+                    request.resource.data.ownerId == request.auth.uid;
+                    
+      allow update: if isAuthenticated() && 
+                    resource.data.ownerId == request.auth.uid &&
+                    request.resource.data.ownerId == resource.data.ownerId;
+                    
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+
+      match /inventory/{itemId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isHouseholdMember(householdId) && isValidInventoryItem(request.resource.data);
+        allow update: if isHouseholdMember(householdId) && isValidInventoryItem(request.resource.data);
+        allow delete: if isOwner(householdId);
+      }
+      
+      match /meals/{date} {
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isOwner(householdId) && isValidMealPlan(request.resource.data);
+        allow update: if isOwner(householdId) && isValidMealPlan(request.resource.data);
+        allow delete: if isOwner(householdId);
+      }
+      
+      match /logs/{logId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isHouseholdMember(householdId) && isValidPantryLog(request.resource.data);
+        allow update: if false; // Logs are immutable
+        allow delete: if isOwner(householdId);
+      }
+    }
+
+    // Keep legacy users path for migration
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      match /{document=**} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+  }
+}

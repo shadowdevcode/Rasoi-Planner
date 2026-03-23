@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "Household": {
+      "title": "Household",
+      "description": "Represents a household with an owner and an optional cook.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "cookEmail": { "type": "string" }
+      },
+      "required": ["ownerId"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "An item in the pantry",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "nameHi": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["in-stock", "low", "out"] },
+        "icon": { "type": "string" },
+        "lastUpdated": { "type": "string" },
+        "updatedBy": { "type": "string", "enum": ["owner", "cook"] },
+        "verificationNeeded": { "type": "boolean" },
+        "anomalyReason": { "type": "string" },
+        "defaultQuantity": { "type": "string" },
+        "requestedQuantity": { "type": "string" }
+      },
+      "required": ["name", "category", "status", "icon"]
+    },
+    "MealPlan": {
+      "title": "Meal Plan",
+      "description": "Daily meal plan",
+      "type": "object",
+      "properties": {
+        "morning": { "type": "string" },
+        "evening": { "type": "string" },
+        "notes": { "type": "string" },
+        "leftovers": { "type": "string" }
+      }
+    },
+    "PantryLog": {
+      "title": "Pantry Log",
+      "description": "Log of inventory changes",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "oldStatus": { "type": "string" },
+        "newStatus": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "cook"] }
+      },
+      "required": ["itemId", "itemName", "oldStatus", "newStatus", "timestamp", "role"]
+    }
+  },
+  "firestore": {
+    "/households/{householdId}": {
+      "schema": { "$ref": "#/entities/Household" },
+      "description": "Household documents containing owner and cook info"
+    },
+    "/households/{householdId}/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Household's inventory items"
+    },
+    "/households/{householdId}/meals/{date}": {
+      "schema": { "$ref": "#/entities/MealPlan" },
+      "description": "Household's meal plans by date"
+    },
+    "/households/{householdId}/logs/{logId}": {
+      "schema": { "$ref": "#/entities/PantryLog" },
+      "description": "Household's pantry activity logs"
+    }
+  }
+}
