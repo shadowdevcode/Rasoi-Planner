@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev:e2e": "vite --config test/e2e/vite.e2e.config.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "rules:test": "node test/rules/check-java.mjs && firebase emulators:exec --only firestore --project demo-rasoi-planner \"tsx test/rules/run.ts\"",
+    "e2e": "node test/e2e/run.mjs",
+    "verify:local": "npm run lint && npm run build && npm run rules:test && npm run e2e"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -24,9 +28,14 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.21",
+    "firebase-tools": "^15.11.0",
+    "puppeteer": "^24.40.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Sun, Moon, Info, CheckCircle2 } from 'lucide-react';
 import { MealPlan } from '../types';
+import { getLocalDateKey } from '../utils/date';
 
 interface Props {
   meals: Record<string, MealPlan>;
@@ -56,8 +57,8 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
 
       <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
         {weekDays.map((day) => {
-          const dateStr = day.toISOString().split('T')[0];
-          const isToday = dateStr === new Date().toISOString().split('T')[0];
+          const dateStr = getLocalDateKey(day);
+          const isToday = dateStr === getLocalDateKey(new Date());
           const dayMeals = meals[dateStr] || { morning: '', evening: '', notes: '', leftovers: '' };
 
           return (

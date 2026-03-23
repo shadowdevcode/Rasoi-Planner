@@ -1,0 +1,78 @@
+{
+  "startedAt": "2026-03-23T16:08:17.174Z",
+  "finishedAt": "2026-03-23T16:08:21.690Z",
+  "baseUrl": "http://127.0.0.1:3000",
+  "browserExecutablePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "overallPass": true,
+  "results": [
+    {
+      "name": "owner-core-journey",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=owner.",
+        "Click \"Sign in with Google\".",
+        "Edit the first morning meal entry.",
+        "Open Grocery List and mark Tomatoes as bought.",
+        "Open Pantry & Logs, add Jeera, then mark it Running Low.",
+        "Open Activity Logs and verify the new entry is shown."
+      ]
+    },
+    {
+      "name": "cook-ai-journey",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=cook.",
+        "Click \"Sign in with Google\".",
+        "Switch to English.",
+        "Use Smart Assistant with the standard pantry update prompt.",
+        "Search Tomatoes, mark it Full, add a note for Atta, and verify the note is rendered."
+      ]
+    },
+    {
+      "name": "ai-malformed-response",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=cook.",
+        "Click \"Sign in with Google\".",
+        "Switch to English.",
+        "Submit the malformed AI marker prompt.",
+        "Verify the safe AI error message is rendered and the page stays usable."
+      ]
+    },
+    {
+      "name": "ai-unmatched-item-warning",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=cook.",
+        "Click \"Sign in with Google\".",
+        "Switch to English.",
+        "Submit the unmatched item marker prompt.",
+        "Verify the successful update path runs and Milk moves onto the list."
+      ]
+    },
+    {
+      "name": "note-save-path",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=cook.",
+        "Click \"Sign in with Google\".",
+        "Switch to English.",
+        "Search for Atta.",
+        "Add a note and save it.",
+        "Verify the note renders as saved quantity text."
+      ]
+    },
+    {
+      "name": "remove-from-grocery-path",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=owner.",
+        "Click \"Sign in with Google\".",
+        "Open Grocery List.",
+        "Mark Tomatoes as bought.",
+        "Verify Tomatoes is removed from the grocery list."
+      ]
+    }
+  ],
+  "serverOutput": "\n> react-example@0.0.0 dev:e2e\n> vite --config test/e2e/vite.e2e.config.ts\n\n9:38:17 PM [vite] (client) Re-optimizing dependencies because vite config has changed\n\n  VITE v6.4.1  ready in 425 ms\n\n  ➜  Local:   http://127.0.0.1:3000/\n"
+}

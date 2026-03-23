@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Package, Plus, Trash2, Search, History, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { InventoryItem, InventoryStatus, PantryLog } from '../types';
+import { generateId } from '../utils/id';
 
 interface Props {
   inventory: InventoryItem[];
@@ -25,7 +26,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
     if (!newItemName.trim()) return;
 
     const newItem: InventoryItem = {
-      id: Date.now().toString(),
+      id: generateId(),
       name: newItemName.trim(),
       category: newItemCategory,
       status: 'in-stock',
