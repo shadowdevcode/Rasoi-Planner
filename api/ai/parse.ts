@@ -1,6 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import { validateAiParseResult } from '../../src/services/aiValidation';
-import { AiParseResult, InventoryItem, Language } from '../../src/types';
+import { AiParseResult, InventoryPromptItem, Language, validateAiParseResult } from './validation.js';
 
 type ParseCookVoiceInputRequest = {
   input: string;
@@ -8,12 +6,21 @@ type ParseCookVoiceInputRequest = {
   lang: Language;
 };
 
-type InventoryPromptItem = Pick<InventoryItem, 'id' | 'name' | 'nameHi'>;
+type NodeApiRequest = {
+  method?: string;
+  body?: unknown;
+};
 
-const AI_MODEL = 'gemini-3-flash-preview';
+type NodeApiResponse = {
+  status: (statusCode: number) => NodeApiResponse;
+  json: (body: unknown) => void;
+};
+
 const AI_ENDPOINT_NAME = 'ai_parse';
 const MAX_AI_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 250;
+const AI_REQUEST_TIMEOUT_MS = 12000;
+const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const EMPTY_AI_RESPONSE_MESSAGE = 'Empty response';
 
 class AiParseRequestError extends Error {
@@ -37,8 +44,8 @@ class AiParseExecutionError extends Error {
   }
 }
 
-function createJsonResponse(body: unknown, status: number): Response {
-  return Response.json(body, { status });
+function sendJsonResponse(response: NodeApiResponse, body: unknown, status: number): void {
+  response.status(status).json(body);
 }
 
 function getEnvApiKey(): string {
@@ -49,8 +56,8 @@ function getEnvApiKey(): string {
   return apiKey;
 }
 
-function getAiClient(): GoogleGenAI {
-  return new GoogleGenAI({ apiKey: getEnvApiKey() });
+function getAiModel(): string {
+  return process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 }
 
 function isLanguage(value: unknown): value is Language {
@@ -71,11 +78,25 @@ function isInventoryPromptItem(value: unknown): value is InventoryPromptItem {
 }
 
 function parseRequestBody(raw: unknown): ParseCookVoiceInputRequest {
-  if (!raw || typeof raw !== 'object') {
+  const parsedRaw = (() => {
+    if (typeof raw !== 'string') {
+      return raw;
+    }
+
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch (error) {
+      throw new AiParseRequestError('AI parse request body must be valid JSON.', {
+        cause: error instanceof Error ? error : undefined,
+      });
+    }
+  })();
+
+  if (!parsedRaw || typeof parsedRaw !== 'object') {
     throw new AiParseRequestError('AI parse request body must be an object.');
   }
 
-  const candidate = raw as Record<string, unknown>;
+  const candidate = parsedRaw as Record<string, unknown>;
   if (typeof candidate.input !== 'string' || candidate.input.trim().length === 0) {
     throw new AiParseRequestError('AI parse request input must be a non-empty string.');
   }
@@ -114,42 +135,6 @@ function buildPrompt(input: string, inventory: InventoryPromptItem[], lang: Lang
       Return a JSON object matching this schema.`;
 }
 
-function createResponseSchema() {
-  return {
-    type: Type.OBJECT,
-    properties: {
-      understood: { type: Type.BOOLEAN },
-      message: { type: Type.STRING },
-      updates: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            itemId: { type: Type.STRING },
-            newStatus: { type: Type.STRING },
-            requestedQuantity: { type: Type.STRING },
-          },
-          required: ['itemId', 'newStatus'],
-        },
-      },
-      unlistedItems: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            status: { type: Type.STRING },
-            category: { type: Type.STRING },
-            requestedQuantity: { type: Type.STRING },
-          },
-          required: ['name', 'status', 'category'],
-        },
-      },
-    },
-    required: ['understood', 'updates', 'unlistedItems'],
-  };
-}
-
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -179,26 +164,96 @@ async function waitForRetry(delayMs: number): Promise<void> {
   });
 }
 
+function createTimeoutError(timeoutMs: number): Error {
+  return new Error(`AI request timed out after ${timeoutMs}ms.`);
+}
+
+function buildGeminiEndpoint(model: string, apiKey: string): string {
+  return `${GEMINI_API_BASE_URL}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+}
+
+function createGeminiRequestBody(prompt: string): Record<string, unknown> {
+  return {
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig: {
+      responseMimeType: 'application/json',
+    },
+  };
+}
+
+function parseGeminiText(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Gemini response body is not an object.');
+  }
+
+  const parsed = raw as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ text?: string }>;
+      };
+    }>;
+  };
+
+  const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    throw new Error(EMPTY_AI_RESPONSE_MESSAGE);
+  }
+
+  return text;
+}
+
+async function requestGeminiJson(prompt: string, apiKey: string, model: string, timeoutMs: number): Promise<unknown> {
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    abortController.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(buildGeminiEndpoint(model, apiKey), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(createGeminiRequestBody(prompt)),
+      signal: abortController.signal,
+    });
+
+    const responseBody = await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `Gemini request failed. status=${response.status} body=${responseBody.slice(0, 1000)}`
+      );
+    }
+
+    const parsed = JSON.parse(responseBody) as unknown;
+    const text = parseGeminiText(parsed);
+    return JSON.parse(text) as unknown;
+  } catch (error) {
+    const candidate = error as { name?: string };
+    if (candidate?.name === 'AbortError') {
+      throw createTimeoutError(timeoutMs);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function generateAiParseResult(input: string, inventory: InventoryPromptItem[], lang: Language): Promise<AiParseResult> {
-  const aiClient = getAiClient();
+  const apiKey = getEnvApiKey();
+  const aiModel = getAiModel();
+  const prompt = buildPrompt(input, inventory, lang);
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt += 1) {
     try {
-      const response = await aiClient.models.generateContent({
-        model: AI_MODEL,
-        contents: buildPrompt(input, inventory, lang),
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: createResponseSchema(),
-        },
-      });
-
-      if (!response.text) {
-        throw new Error(EMPTY_AI_RESPONSE_MESSAGE);
-      }
-
-      const parsed = JSON.parse(response.text) as unknown;
+      const parsed = await requestGeminiJson(prompt, apiKey, aiModel, AI_REQUEST_TIMEOUT_MS);
       return validateAiParseResult(parsed);
     } catch (error) {
       lastError = error;
@@ -222,25 +277,18 @@ export const config = {
   runtime: 'nodejs',
 };
 
-export default async function handler(request: Request): Promise<Response> {
+export default async function handler(request: NodeApiRequest, response: NodeApiResponse): Promise<void> {
   if (request.method !== 'POST') {
-    return createJsonResponse({ message: 'Method not allowed.' }, 405);
+    sendJsonResponse(response, { message: 'Method not allowed.' }, 405);
+    return;
   }
 
   try {
-    let body: unknown;
-
-    try {
-      body = (await request.json()) as unknown;
-    } catch (error) {
-      throw new AiParseRequestError('AI parse request body must be valid JSON.', {
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-
+    const body = request.body;
     const { input, inventory, lang } = parseRequestBody(body);
     const result = await generateAiParseResult(input, inventory, lang);
-    return createJsonResponse(result, 200);
+    sendJsonResponse(response, result, 200);
+    return;
   } catch (error) {
     const errorMessage = getErrorMessage(error);
     const status =
@@ -254,6 +302,10 @@ export default async function handler(request: Request): Promise<Response> {
       errorMessage,
     });
 
-    return createJsonResponse({ message: status === 400 || status === 503 ? errorMessage : 'Could not process AI response safely. Please retry with clearer input.' }, status);
+    sendJsonResponse(
+      response,
+      { message: status === 400 || status === 503 ? errorMessage : 'Could not process AI response safely. Please retry with clearer input.' },
+      status
+    );
   }
 }

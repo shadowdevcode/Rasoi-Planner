@@ -46,6 +46,10 @@ export default function App() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
   const [uiFeedback, setUiFeedback] = useState<UiFeedback | null>(null);
+  const isOwner = role === 'owner';
+  const shellWidthClass = isOwner ? 'max-w-7xl' : 'max-w-5xl';
+  const shellSectionClass = `${shellWidthClass} mx-auto px-4 md:px-6`;
+  const shellMainClass = `${shellWidthClass} mx-auto p-4 md:p-6 pb-24`;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -71,6 +75,22 @@ export default function App() {
     let inventoryUnsub: Unsubscribe | null = null;
     let mealsUnsub: Unsubscribe | null = null;
     let logsUnsub: Unsubscribe | null = null;
+    let hasLoadedHousehold = false;
+    let hasLoadedInventory = false;
+    let hasLoadedMeals = false;
+    let hasResolvedInitialView = false;
+
+    const markInitialViewReady = (): void => {
+      if (hasResolvedInitialView) {
+        return;
+      }
+
+      if (hasLoadedHousehold && hasLoadedInventory && hasLoadedMeals) {
+        hasResolvedInitialView = true;
+        setIsDataLoaded(true);
+        setIsAuthReady(true);
+      }
+    };
 
     const initialize = async (): Promise<void> => {
       try {
@@ -88,6 +108,8 @@ export default function App() {
 
             const data = snapshot.data() as HouseholdData;
             setHouseholdData(data);
+            hasLoadedHousehold = true;
+            markInitialViewReady();
 
             if (resolved.role === 'cook') {
               const normalizedUserEmail = user.email?.toLowerCase() ?? '';
@@ -112,6 +134,8 @@ export default function App() {
               ...(itemDoc.data() as Omit<InventoryItem, 'id'>),
             }));
             setInventory(items);
+            hasLoadedInventory = true;
+            markInitialViewReady();
           },
           (error) => {
             console.error('inventory_snapshot_failed', { error, householdId: resolved.householdId });
@@ -127,6 +151,8 @@ export default function App() {
               mealData[mealDoc.id] = mealDoc.data() as MealPlan;
             });
             setMeals(mealData);
+            hasLoadedMeals = true;
+            markInitialViewReady();
           },
           (error) => {
             console.error('meals_snapshot_failed', { error, householdId: resolved.householdId });
@@ -142,8 +168,6 @@ export default function App() {
               ...(logDoc.data() as Omit<PantryLog, 'id'>),
             }));
             setLogs(nextLogs);
-            setIsDataLoaded(true);
-            setIsAuthReady(true);
           },
           (error) => {
             console.error('logs_snapshot_failed', { error, householdId: resolved.householdId });
@@ -379,31 +403,38 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 font-sans">
-      <header className="bg-orange-600 text-white p-4 shadow-md sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <ChefHat size={28} />
-            <h1 className="text-2xl font-bold tracking-tight hidden sm:block">Rasoi Planner</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex bg-orange-700 rounded-lg p-1 shadow-inner px-3 py-1.5">
-              <span className="text-white text-sm font-bold flex items-center gap-2">
-                {role === 'owner' ? <User size={16} /> : <ChefHat size={16} />}
-                {role === 'owner' ? 'Owner View' : 'Cook View'}
-              </span>
+      <header className="sticky top-0 z-50 bg-gradient-to-r from-orange-600 via-orange-600 to-orange-500 text-white shadow-[0_10px_30px_rgba(154,52,18,0.18)]">
+        <div className={`${shellSectionClass} py-4`}>
+          <div className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-white/10 px-4 py-3 shadow-sm backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/15">
+                <ChefHat size={24} />
+              </div>
+              <div className="min-w-0">
+                <h1 className="hidden text-2xl font-bold tracking-tight sm:block">Rasoi Planner</h1>
+                <p className="text-xs font-medium uppercase tracking-[0.24em] text-orange-100/80">
+                  {isOwner ? 'Owner workspace' : 'Cook workspace'}
+                </p>
+              </div>
             </div>
-            <button
-              onClick={logout}
-              className="text-orange-100 hover:text-white text-sm font-medium transition-colors"
-            >
-              Sign Out
-            </button>
+            <div className="flex items-center justify-between gap-3 sm:justify-end">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm font-semibold text-white shadow-inner">
+                {isOwner ? <User size={16} /> : <ChefHat size={16} />}
+                <span>{isOwner ? 'Owner' : 'Cook'}</span>
+              </div>
+              <button
+                onClick={logout}
+                className="text-sm font-medium text-orange-50 transition-colors hover:text-white"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       {uiFeedback && (
-        <div className="max-w-5xl mx-auto px-4 md:px-6 pt-4">
+        <div className={`${shellSectionClass} pt-4`}>
           <div
             className={`rounded-xl px-4 py-3 border flex items-center gap-2 text-sm font-medium ${
               uiFeedback.kind === 'success'
@@ -418,7 +449,7 @@ export default function App() {
       )}
 
       {role === 'owner' && householdData && (
-        <div className="max-w-5xl mx-auto px-4 md:px-6 pt-6">
+        <div className={`${shellSectionClass} pt-6`}>
           <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h3 className="font-bold text-stone-800">Household Settings</h3>
@@ -459,7 +490,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="max-w-5xl mx-auto p-4 md:p-6 pb-24">
+      <main className={shellMainClass}>
         {!isDataLoaded ? (
           <div className="flex justify-center py-24">
             <Loader2 className="animate-spin text-orange-600" size={48} />

@@ -208,6 +208,51 @@ These constraints are enforced in `firestore.rules` and validated by `test/rules
 - Local emulator config: `firebase.json`
 - Confirm production Firebase Auth domain setup before release (Google provider and authorized domains)
 
+## GitHub-Vercel Sync Workflow
+
+This project uses GitHub as the deployment source of truth.
+
+### Daily flow
+1. Create a feature branch from `main`.
+2. Commit and push branch changes.
+3. Open a pull request.
+4. Wait for CI check `verify-local` to pass.
+5. Merge PR into `main`.
+6. Vercel auto-deploys merged `main` commit to production.
+
+### CI contract
+- Workflow file: `.github/workflows/ci.yml`
+- Triggers:
+  - every pull request
+  - every push to `main`
+- Required check name for branch protection: `verify-local`
+- CI command chain:
+  - `npm ci`
+  - `npm run verify:local`
+
+### Local push gate (Husky)
+- Husky install hook is configured via `npm run prepare`.
+- Pre-push hook path: `.husky/pre-push`
+- Pre-push command: `npm run verify:local`
+- If checks fail, push is blocked.
+
+### Required GitHub settings (`main` branch protection)
+- Require pull request before merging.
+- Require status checks to pass before merging.
+- Add required status check: `verify-local`.
+- Require branches to be up to date before merging.
+
+### Required Vercel settings
+- Git repository connected to this GitHub repo.
+- Production branch set to `main`.
+- Preview deployments enabled for pull requests.
+- `GEMINI_API_KEY` configured for Preview and Production environments.
+
+### Emergency rollback
+- Open Vercel dashboard.
+- Find the last known-good production deployment.
+- Redeploy that deployment to production.
+
 ## Troubleshooting
 
 ### `GEMINI_API_KEY is not configured for the AI parse endpoint`
