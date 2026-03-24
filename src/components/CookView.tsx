@@ -152,48 +152,118 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header Controls */}
-      <div className="flex justify-end">
-        <button
-          onClick={() => setLang(lang === 'en' ? 'hi' : 'en')}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 rounded-full text-sm font-semibold shadow-sm hover:bg-stone-50 transition-colors"
-        >
-          <Globe size={16} className="text-orange-600" />
-          {lang === 'en' ? 'हिंदी में देखें' : 'View in English'}
-        </button>
-      </div>
+    <div className="space-y-8 pb-24 sm:pb-10">
+      <section className="rounded-[28px] border border-stone-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm md:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-2xl space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              {lang === 'hi' ? 'कुक वर्कस्पेस' : 'Cook workspace'}
+            </p>
+            <h2 className="text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
+              {lang === 'hi' ? 'आज का मेनू और पेंट्री स्थिति' : t.todayMenu}
+            </h2>
+            <p className="text-sm leading-6 text-stone-500">
+              {lang === 'hi'
+                ? 'मेनू, स्मार्ट अपडेट, और पेंट्री चेक एक ही साफ़-सुथरे सतह पर।'
+                : 'Keep menu review, AI updates, and pantry checks on one calm surface.'}
+            </p>
+          </div>
+          <div className="inline-flex rounded-full border border-stone-200 bg-stone-50 p-1 shadow-sm">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-stone-500">
+              <Mic size={14} />
+              Cook View
+            </span>
+          </div>
+          <button
+            onClick={() => setLang(lang === 'en' ? 'hi' : 'en')}
+            className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition-colors hover:bg-stone-50"
+          >
+            <Globe size={16} className="text-orange-600" />
+            {lang === 'en' ? 'हिंदी में देखें' : 'View in English'}
+          </button>
+        </div>
+      </section>
 
-      {/* Today's Menu */}
-      <section>
-        <h2 className="text-2xl font-bold text-stone-800 mb-4">{t.todayMenu}</h2>
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Morning + Lunch */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border-t-4 border-t-yellow-400 border border-stone-200">
-            <div className="flex items-center gap-3 mb-4 text-yellow-600">
-              <Sun size={28} />
-              <h3 className="text-xl font-bold">{t.morning}</h3>
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-50 text-orange-600 ring-1 ring-orange-100">
+            <Mic size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-stone-900">Smart Assistant</h3>
+            <p className="text-sm text-stone-500">
+              {lang === 'hi' ? 'त्वरित स्टेटस अपडेट और अनलिस्टेड आइटम जोड़ें।' : 'Quick status updates and unlisted item requests.'}
+            </p>
+          </div>
+        </div>
+        <div className="rounded-[28px] border border-stone-200 bg-gradient-to-br from-orange-500 to-orange-600 p-5 text-white shadow-sm md:p-6">
+          <form onSubmit={handleAiSubmit} className="flex flex-col gap-3 sm:flex-row">
+            <input
+              type="text"
+              value={aiInput}
+              onChange={(e) => setAiInput(e.target.value)}
+              placeholder={t.voicePrompt}
+              className="min-w-0 flex-1 rounded-xl border border-white/20 bg-white px-4 py-3 text-stone-800 outline-none transition focus:ring-2 focus:ring-orange-200"
+              disabled={isProcessing}
+            />
+            <button
+              type="submit"
+              disabled={isProcessing || !aiInput.trim()}
+              className="inline-flex items-center justify-center rounded-xl bg-stone-900 px-6 py-3 font-bold text-white transition-colors disabled:opacity-50 hover:bg-stone-800 sm:flex-none"
+            >
+              {isProcessing ? t.processing : t.voiceBtn}
+            </button>
+          </form>
+          <p className="mt-3 text-sm text-orange-100/90">
+            Tip: Type something like "Tamatar aur atta khatam ho gaya hai"
+          </p>
+          {errorMessage && (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
             </div>
-            <p className="text-lg text-stone-800 font-medium whitespace-pre-wrap mb-4">
+          )}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              {lang === 'hi' ? 'आज का मेनू' : 'Today'}
+            </p>
+            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">{t.todayMenu}</h3>
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex h-full flex-col rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm md:p-6">
+            <div className="flex items-center gap-3 border-b border-stone-100 pb-4 text-yellow-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-yellow-50 ring-1 ring-yellow-100">
+                <Sun size={24} />
+              </div>
+              <h4 className="text-xl font-semibold text-stone-900">{t.morning}</h4>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap text-lg font-medium leading-8 text-stone-800">
               {todaysMeals.morning || t.notPlanned}
             </p>
-            
             {(todaysMeals.notes || todaysMeals.leftovers) && (
-              <div className="pt-4 border-t border-stone-100 space-y-3">
+              <div className="mt-5 space-y-3 border-t border-stone-100 pt-5">
                 {todaysMeals.notes && (
-                  <div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-sm flex gap-2">
-                    <Info size={18} className="shrink-0 mt-0.5" />
+                  <div className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                    <Info size={18} className="mt-0.5 shrink-0" />
                     <div>
-                      <span className="font-bold block mb-1">{t.notes}:</span>
+                      <span className="mb-1 block font-semibold">{t.notes}:</span>
                       {todaysMeals.notes}
                     </div>
                   </div>
                 )}
                 {todaysMeals.leftovers && (
-                  <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl text-sm flex gap-2">
-                    <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
+                  <div className="flex gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
                     <div>
-                      <span className="font-bold block mb-1">{t.leftovers}:</span>
+                      <span className="mb-1 block font-semibold">{t.leftovers}:</span>
                       {todaysMeals.leftovers}
                     </div>
                   </div>
@@ -202,177 +272,146 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
             )}
           </div>
 
-          {/* Evening */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border-t-4 border-t-indigo-500 border border-stone-200">
-            <div className="flex items-center gap-3 mb-4 text-indigo-600">
-              <Moon size={28} />
-              <h3 className="text-xl font-bold">{t.evening}</h3>
+          <div className="flex h-full flex-col rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm md:p-6">
+            <div className="flex items-center gap-3 border-b border-stone-100 pb-4 text-indigo-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-50 ring-1 ring-indigo-100">
+                <Moon size={24} />
+              </div>
+              <h4 className="text-xl font-semibold text-stone-900">{t.evening}</h4>
             </div>
-            <p className="text-lg text-stone-800 font-medium whitespace-pre-wrap mb-4">
+            <p className="mt-4 whitespace-pre-wrap text-lg font-medium leading-8 text-stone-800">
               {todaysMeals.evening || t.notPlanned}
             </p>
           </div>
         </div>
       </section>
 
-      {/* AI Voice Assistant Simulation */}
-      <section className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl p-6 shadow-md text-white">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="bg-white/20 p-2 rounded-full">
-            <Mic size={24} />
-          </div>
-          <h3 className="text-xl font-bold">Smart Assistant</h3>
-        </div>
-        <form onSubmit={handleAiSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={aiInput}
-            onChange={(e) => setAiInput(e.target.value)}
-            placeholder={t.voicePrompt}
-            className="flex-grow px-4 py-3 rounded-xl text-stone-800 focus:outline-none focus:ring-2 focus:ring-orange-300"
-            disabled={isProcessing}
-          />
-          <button
-            type="submit"
-            disabled={isProcessing || !aiInput.trim()}
-            className="bg-stone-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-stone-800 transition-colors disabled:opacity-50"
-          >
-            {isProcessing ? t.processing : t.voiceBtn}
-          </button>
-        </form>
-        <p className="text-sm text-orange-100 mt-3 opacity-80">
-          Tip: Type something like "Tamatar aur atta khatam ho gaya hai"
-        </p>
-        {errorMessage && (
-          <div className="mt-4 rounded-xl bg-red-50 text-red-700 border border-red-200 px-4 py-3 text-sm font-medium flex items-start gap-2">
-            <AlertCircle size={16} className="mt-0.5 shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-      </section>
-
-      {/* Pantry Quick Update */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-stone-200">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <section className="space-y-4">
+        <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-stone-800">{t.pantryCheck}</h2>
-            <p className="text-stone-500">{t.pantryDesc}</p>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-            <input
-              type="text"
-              placeholder={t.search}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-stone-300 rounded-lg w-full md:w-64 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
-            />
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
+              {lang === 'hi' ? 'पेंट्री चेक' : 'Pantry'}
+            </p>
+            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-stone-900">{t.pantryCheck}</h3>
           </div>
         </div>
+        <div className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <p className="text-sm leading-6 text-stone-500">{t.pantryDesc}</p>
+            <div className="relative w-full md:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+              <input
+                type="text"
+                placeholder={t.search}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-xl border border-stone-300 bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+              />
+            </div>
+          </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredInventory.map((item) => (
-            <div key={item.id} className="flex flex-col gap-3 p-4 rounded-xl border border-stone-200 bg-white shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{item.icon}</span>
-                  <div>
-                    <p className="font-bold text-stone-800 text-lg leading-tight">
-                      {lang === 'hi' && item.nameHi ? item.nameHi : item.name}
-                    </p>
-                    {lang === 'hi' && <p className="text-sm text-stone-500">{item.name}</p>}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filteredInventory.map((item) => (
+              <div key={item.id} className="flex h-full flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50/50 p-4 shadow-sm transition-shadow hover:shadow-md">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="text-3xl">{item.icon}</span>
+                    <div className="min-w-0">
+                      <p className="break-words text-lg font-semibold leading-tight text-stone-900">
+                        {lang === 'hi' && item.nameHi ? item.nameHi : item.name}
+                      </p>
+                      {lang === 'hi' && <p className="break-words text-sm text-stone-500">{item.name}</p>}
+                    </div>
                   </div>
+                  {(item.status === 'low' || item.status === 'out') && (
+                    <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-100 bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-600">
+                      <ShoppingCart size={14} />
+                      <span className="whitespace-nowrap">{t.onList}</span>
+                    </div>
+                  )}
                 </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <button
+                    onClick={() => handleStatusUpdate(item.id, 'in-stock', item.name, item.nameHi)}
+                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                      item.status === 'in-stock'
+                        ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
+                        : 'border-stone-200 bg-white text-stone-500 hover:bg-stone-100'
+                    }`}
+                  >
+                    {t.inStock}
+                  </button>
+                  <button
+                    onClick={() => handleStatusUpdate(item.id, 'low', item.name, item.nameHi)}
+                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                      item.status === 'low'
+                        ? 'border-yellow-200 bg-yellow-100 text-yellow-700'
+                        : 'border-stone-200 bg-white text-stone-500 hover:bg-stone-100'
+                    }`}
+                  >
+                    {t.low}
+                  </button>
+                  <button
+                    onClick={() => handleStatusUpdate(item.id, 'out', item.name, item.nameHi)}
+                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                      item.status === 'out'
+                        ? 'border-red-200 bg-red-100 text-red-700'
+                        : 'border-stone-200 bg-white text-stone-500 hover:bg-stone-100'
+                    }`}
+                  >
+                    {t.out}
+                  </button>
+                </div>
+
                 {(item.status === 'low' || item.status === 'out') && (
-                  <div className="flex items-center gap-1 text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md border border-orange-100">
-                    <ShoppingCart size={14} />
-                    <span className="hidden sm:inline">{t.onList}</span>
+                  <div className="mt-1">
+                    {editingNoteId === item.id ? (
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          type="text"
+                          value={noteValue}
+                          onChange={(e) => setNoteValue(e.target.value)}
+                          placeholder={lang === 'hi' ? 'कितना चाहिए? (उदा: 2kg)' : 'Quantity? (e.g. 2kg)'}
+                          className="min-w-0 flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleSaveNote(item.id, item.status)}
+                          className="inline-flex items-center justify-center rounded-xl bg-stone-900 p-2 text-white transition-colors hover:bg-stone-800 sm:flex-none"
+                          title={t.save}
+                        >
+                          <Check size={18} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEditingNoteId(item.id);
+                          setNoteValue(item.requestedQuantity || '');
+                        }}
+                        className="flex w-full items-center gap-2 py-1 text-sm text-stone-500 transition-colors hover:text-stone-800"
+                      >
+                        <MessageSquarePlus size={16} />
+                        {item.requestedQuantity ? (
+                          <span className="font-medium text-stone-700">
+                            {lang === 'hi' ? 'नोट:' : 'Note:'} {item.requestedQuantity}
+                          </span>
+                        ) : (
+                          <span>{t.addNote}</span>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-              
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                <button
-                  onClick={() => handleStatusUpdate(item.id, 'in-stock', item.name, item.nameHi)}
-                  className={`py-2 px-1 rounded-lg text-sm font-bold transition-colors border ${
-                    item.status === 'in-stock' 
-                      ? 'bg-emerald-100 border-emerald-200 text-emerald-700' 
-                      : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'
-                  }`}
-                >
-                  {t.inStock}
-                </button>
-                <button
-                  onClick={() => handleStatusUpdate(item.id, 'low', item.name, item.nameHi)}
-                  className={`py-2 px-1 rounded-lg text-sm font-bold transition-colors border ${
-                    item.status === 'low' 
-                      ? 'bg-yellow-100 border-yellow-200 text-yellow-700' 
-                      : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'
-                  }`}
-                >
-                  {t.low}
-                </button>
-                <button
-                  onClick={() => handleStatusUpdate(item.id, 'out', item.name, item.nameHi)}
-                  className={`py-2 px-1 rounded-lg text-sm font-bold transition-colors border ${
-                    item.status === 'out' 
-                      ? 'bg-red-100 border-red-200 text-red-700' 
-                      : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'
-                  }`}
-                >
-                  {t.out}
-                </button>
-              </div>
-
-              {/* Note / Quantity Section */}
-              {(item.status === 'low' || item.status === 'out') && (
-                <div className="mt-1">
-                  {editingNoteId === item.id ? (
-                    <div className="flex gap-2 items-center">
-                      <input
-                        type="text"
-                        value={noteValue}
-                        onChange={(e) => setNoteValue(e.target.value)}
-                        placeholder={lang === 'hi' ? 'कितना चाहिए? (उदा: 2kg)' : 'Quantity? (e.g. 2kg)'}
-                        className="flex-grow px-3 py-2 text-sm border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleSaveNote(item.id, item.status)}
-                        className="bg-stone-800 text-white p-2 rounded-lg hover:bg-stone-700 transition-colors"
-                        title={t.save}
-                      >
-                        <Check size={18} />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setEditingNoteId(item.id);
-                        setNoteValue(item.requestedQuantity || '');
-                      }}
-                      className="flex items-center gap-2 text-sm text-stone-500 hover:text-stone-800 transition-colors py-1 w-full"
-                    >
-                      <MessageSquarePlus size={16} />
-                      {item.requestedQuantity ? (
-                        <span className="font-medium text-stone-700">
-                          {lang === 'hi' ? 'नोट:' : 'Note:'} {item.requestedQuantity}
-                        </span>
-                      ) : (
-                        <span>{t.addNote}</span>
-                      )}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-6 py-3 rounded-full shadow-xl font-medium text-sm z-50 animate-in fade-in slide-in-from-bottom-4">
+        <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-full bg-stone-900 px-5 py-3 text-sm font-medium text-white shadow-xl animate-in fade-in slide-in-from-top-4 sm:top-auto sm:bottom-6 sm:translate-y-0 sm:slide-in-from-bottom-4">
           {toastMessage}
         </div>
       )}

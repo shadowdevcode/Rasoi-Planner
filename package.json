@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit",
     "rules:test": "node test/rules/check-java.mjs && firebase emulators:exec --only firestore --project demo-rasoi-planner \"tsx test/rules/run.ts\"",
     "e2e": "node test/e2e/run.mjs",
-    "verify:local": "npm run lint && npm run build && npm run rules:test && npm run e2e"
+    "verify:local": "npm run lint && npm run build && npm run rules:test && npm run e2e",
+    "prepare": "husky"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -35,6 +36,7 @@
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.21",
     "firebase-tools": "^15.11.0",
+    "husky": "^9.1.7",
     "puppeteer": "^24.40.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
