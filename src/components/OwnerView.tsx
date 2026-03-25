@@ -28,12 +28,13 @@ interface Props {
   onClearAnomaly: (id: string) => void;
   logs: PantryLog[];
   unknownIngredientQueue: UnknownIngredientQueueItem[];
+  unknownQueueWarning: string | null;
   onPromoteUnknownIngredient: (queueItem: UnknownIngredientQueueItem) => void;
   onDismissUnknownIngredient: (queueItem: UnknownIngredientQueueItem) => void;
   language: UiLanguage;
 }
 
-export default function OwnerView({ meals, onUpdateMeal, inventory, onAddInventoryItem, onUpdateInventory, onDeleteInventoryItem, onClearAnomaly, logs, unknownIngredientQueue, onPromoteUnknownIngredient, onDismissUnknownIngredient, language }: Props) {
+export default function OwnerView({ meals, onUpdateMeal, inventory, onAddInventoryItem, onUpdateInventory, onDeleteInventoryItem, onClearAnomaly, logs, unknownIngredientQueue, unknownQueueWarning, onPromoteUnknownIngredient, onDismissUnknownIngredient, language }: Props) {
   const [activeTab, setActiveTab] = useState<OwnerTab>('meals');
   const tabRefs = useRef<Record<OwnerTab, HTMLButtonElement | null>>({
     meals: null,
@@ -109,6 +110,7 @@ export default function OwnerView({ meals, onUpdateMeal, inventory, onAddInvento
         onClearAnomaly={onClearAnomaly}
         logs={logs}
         unknownIngredientQueue={unknownIngredientQueue}
+        unknownQueueWarning={unknownQueueWarning}
         onPromoteUnknownIngredient={onPromoteUnknownIngredient}
         onDismissUnknownIngredient={onDismissUnknownIngredient}
         language={language}
