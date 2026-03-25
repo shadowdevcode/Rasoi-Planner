@@ -89,16 +89,43 @@ function normalizeCatalogImageBaseUrl(rawBaseUrl: string): string {
   return trimmedValue.replace(/\/+$/u, '');
 }
 
-function getCatalogImageBaseUrl(): string {
+function getCatalogImageBaseUrlFromEnv(): string | undefined {
   const viteEnvCandidate = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
   const processEnvCandidate = typeof process !== 'undefined' ? process.env : undefined;
-  const configuredBaseUrl = viteEnvCandidate?.VITE_INGREDIENT_IMAGE_BASE_URL ?? processEnvCandidate?.VITE_INGREDIENT_IMAGE_BASE_URL;
+  return viteEnvCandidate?.VITE_INGREDIENT_IMAGE_BASE_URL ?? processEnvCandidate?.VITE_INGREDIENT_IMAGE_BASE_URL;
+}
 
-  if (configuredBaseUrl === undefined) {
-    throw new Error('VITE_INGREDIENT_IMAGE_BASE_URL is required for ingredient catalog images.');
+let cachedCatalogImageBaseUrlConfig: string | undefined;
+let cachedCatalogImageBaseUrlValue: string | null | undefined;
+
+function getCatalogImageBaseUrl(): string | null {
+  const configuredBaseUrl = getCatalogImageBaseUrlFromEnv();
+  if (cachedCatalogImageBaseUrlValue !== undefined && cachedCatalogImageBaseUrlConfig === configuredBaseUrl) {
+    return cachedCatalogImageBaseUrlValue;
   }
 
-  return normalizeCatalogImageBaseUrl(configuredBaseUrl);
+  if (configuredBaseUrl === undefined) {
+    cachedCatalogImageBaseUrlConfig = configuredBaseUrl;
+    cachedCatalogImageBaseUrlValue = null;
+    return cachedCatalogImageBaseUrlValue;
+  }
+
+  try {
+    cachedCatalogImageBaseUrlConfig = configuredBaseUrl;
+    cachedCatalogImageBaseUrlValue = normalizeCatalogImageBaseUrl(configuredBaseUrl);
+    return cachedCatalogImageBaseUrlValue;
+  } catch (error) {
+    console.warn(
+      'Ingredient catalog images are disabled because VITE_INGREDIENT_IMAGE_BASE_URL is invalid.',
+      {
+        configuredBaseUrl,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+    cachedCatalogImageBaseUrlConfig = configuredBaseUrl;
+    cachedCatalogImageBaseUrlValue = null;
+    return cachedCatalogImageBaseUrlValue;
+  }
 }
 
 function createIngredientCatalogEntry<TKey extends string>(
@@ -640,8 +667,9 @@ export function resolveIngredientVisual(input: IngredientVisualInput): Ingredien
   const catalogMatch = findIngredientCatalogMatch(searchText);
   if (catalogMatch !== null) {
     const imageBaseUrl = getCatalogImageBaseUrl();
+    const imageUrl = imageBaseUrl === null ? null : buildCatalogImageUrl(imageBaseUrl, catalogMatch.entry.imageObjectKey);
     return {
-      imageUrl: buildCatalogImageUrl(imageBaseUrl, catalogMatch.entry.imageObjectKey),
+      imageUrl,
       fallbackIcon: catalogMatch.entry.fallbackIcon,
       altText: catalogMatch.entry.altText,
       source: 'catalog-match',

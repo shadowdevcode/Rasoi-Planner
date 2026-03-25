@@ -217,19 +217,37 @@ function testIngredientVisualCatalogMatch(): void {
   assert.equal(visual.imageUrl, 'https://cdn.example.com/rasoi/ingredients/turmeric.webp');
 }
 
-function testIngredientVisualRequiresConfiguredBaseUrl(): void {
+function testIngredientVisualMissingBaseUrlUsesFallbackWithoutThrowing(): void {
   const previousValue = process.env.VITE_INGREDIENT_IMAGE_BASE_URL;
   delete process.env.VITE_INGREDIENT_IMAGE_BASE_URL;
 
   try {
-    assert.throws(
-      () =>
-        resolveIngredientVisual({
-          name: 'Turmeric',
-          category: 'spices',
-        }),
-      /VITE_INGREDIENT_IMAGE_BASE_URL is required/,
-    );
+    const visual = resolveIngredientVisual({
+      name: 'Turmeric',
+      category: 'spices',
+    });
+
+    assert.equal(visual.source, 'catalog-match');
+    assert.equal(visual.fallbackIcon, '🟡');
+    assert.equal(visual.imageUrl, null);
+  } finally {
+    process.env.VITE_INGREDIENT_IMAGE_BASE_URL = previousValue;
+  }
+}
+
+function testIngredientVisualInvalidBaseUrlUsesFallbackWithoutThrowing(): void {
+  const previousValue = process.env.VITE_INGREDIENT_IMAGE_BASE_URL;
+  process.env.VITE_INGREDIENT_IMAGE_BASE_URL = 'ftp://invalid';
+
+  try {
+    const visual = resolveIngredientVisual({
+      name: 'Turmeric',
+      category: 'spices',
+    });
+
+    assert.equal(visual.source, 'catalog-match');
+    assert.equal(visual.fallbackIcon, '🟡');
+    assert.equal(visual.imageUrl, null);
   } finally {
     process.env.VITE_INGREDIENT_IMAGE_BASE_URL = previousValue;
   }
@@ -327,7 +345,8 @@ function run(): void {
   testBuildPantryLogIsDeterministic();
   testSanitizeFirestorePayloadOmitsUndefinedFields();
   testIngredientVisualCatalogMatch();
-  testIngredientVisualRequiresConfiguredBaseUrl();
+  testIngredientVisualMissingBaseUrlUsesFallbackWithoutThrowing();
+  testIngredientVisualInvalidBaseUrlUsesFallbackWithoutThrowing();
   testIngredientVisualHindiMatch();
   testExpandedIngredientVisualCoverage();
   testIngredientVisualChoosesMostSpecificKeyword();
