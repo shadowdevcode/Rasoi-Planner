@@ -36,11 +36,29 @@ export interface PantryLog {
   role: Role;
 }
 
+export type UnknownIngredientQueueStatus = 'open' | 'resolved';
+
+export interface UnknownIngredientQueueItem {
+  id: string;
+  name: string;
+  category: string;
+  status: UnknownIngredientQueueStatus;
+  requestedStatus: InventoryStatus;
+  requestedQuantity?: string;
+  createdAt: string;
+  createdBy: Role;
+  resolvedAt?: string;
+  resolvedBy?: Role;
+  resolution?: 'promoted' | 'dismissed';
+  promotedInventoryItemId?: string;
+}
+
 export interface AppState {
   role: Role;
   inventory: InventoryItem[];
   meals: Record<string, MealPlan>;
   logs: PantryLog[];
+  unknownIngredientQueue: UnknownIngredientQueueItem[];
 }
 
 export interface HouseholdPreferences {

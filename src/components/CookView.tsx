@@ -3,13 +3,14 @@ import { Sun, Moon, AlertCircle, CheckCircle2, Search, Mic, Info, ShoppingCart, 
 import { MealPlan, InventoryItem, InventoryStatus, UiLanguage } from '../types';
 import { parseCookVoiceInput } from '../services/ai';
 import { getLocalDateKey } from '../utils/date';
-import { getCookCopy } from '../i18n/copy';
+import { getIngredientNativeContextLabel, resolveInventoryItemVisual } from '../utils/ingredientVisuals';
+import { getCookCopy, getInventoryCopy } from '../i18n/copy';
 
 interface Props {
   meals: Record<string, MealPlan>;
   inventory: InventoryItem[];
   onUpdateInventory: (id: string, status: InventoryStatus, requestedQuantity?: string) => void;
-  onAddUnlistedItem: (name: string, status: InventoryStatus, category: string, requestedQuantity?: string) => void;
+  onQueueUnknownIngredient: (name: string, status: InventoryStatus, category: string, requestedQuantity?: string) => void;
   language: UiLanguage;
 }
 
@@ -23,17 +24,11 @@ const DICT = {
     pantryCheck: "Pantry Check",
     pantryDesc: "Mark items that are running low or finished.",
     search: "Search ingredients...",
-    inStock: "Full",
-    low: "Low",
-    out: "Empty",
     voicePrompt: "Tell AI what's finished...",
     voiceBtn: "Update",
     notPlanned: "Not planned",
     success: "Updated successfully!",
     processing: "Processing...",
-    onList: "On List",
-    addNote: "Add Note",
-    save: "Save",
   },
   hi: {
     todayMenu: "आज का मेनू",
@@ -44,21 +39,15 @@ const DICT = {
     pantryCheck: "राशन चेक करें",
     pantryDesc: "जो सामान कम है या खत्म हो गया है, उसे मार्क करें।",
     search: "सामान खोजें...",
-    inStock: "पूरा है",
-    low: "कम है",
-    out: "खत्म",
     voicePrompt: "AI को बताएं क्या खत्म हुआ...",
     voiceBtn: "अपडेट करें",
     notPlanned: "तय नहीं है",
     success: "अपडेट हो गया!",
     processing: "प्रोसेस हो रहा है...",
-    onList: "सूची में है",
-    addNote: "नोट लिखें",
-    save: "सेव",
   }
 };
 
-export default function CookView({ meals, inventory, onUpdateInventory, onAddUnlistedItem, language }: Props) {
+export default function CookView({ meals, inventory, onUpdateInventory, onQueueUnknownIngredient, language }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [aiInput, setAiInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -66,10 +55,12 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteValue, setNoteValue] = useState('');
+  const [failedImageIds, setFailedImageIds] = useState<Record<string, true>>({});
 
   const lang = language;
   const t = DICT[lang];
   const copy = getCookCopy(lang);
+  const inventoryCopy = getInventoryCopy(lang);
   const today = getLocalDateKey(new Date());
   const todaysMeals = meals[today] || { morning: t.notPlanned, evening: t.notPlanned, notes: undefined, leftovers: undefined };
 
@@ -94,11 +85,7 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
       setNoteValue('');
     }
     
-    let statusText = '';
-    if (status === 'in-stock') statusText = t.inStock;
-    if (status === 'low') statusText = t.low;
-    if (status === 'out') statusText = t.out;
-    
+    const statusText = inventoryCopy.statusLabels[status];
     const displayName = lang === 'hi' && itemHiName ? itemHiName : itemName;
     showToast(`${displayName} ➔ ${statusText}`);
   };
@@ -107,7 +94,20 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
     onUpdateInventory(id, status, noteValue);
     setEditingNoteId(null);
     setNoteValue('');
-    showToast(lang === 'hi' ? 'नोट सेव हो गया' : 'Note saved');
+    showToast(inventoryCopy.noteSaved);
+  };
+
+  const handleVisualImageError = (itemId: string): void => {
+    setFailedImageIds((current) => {
+      if (current[itemId]) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [itemId]: true,
+      };
+    });
   };
 
   const handleAiSubmit = async (e: React.FormEvent) => {
@@ -132,7 +132,7 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
         });
 
         result.unlistedItems.forEach(item => {
-          onAddUnlistedItem(item.name, item.status as InventoryStatus, item.category, item.requestedQuantity);
+          onQueueUnknownIngredient(item.name, item.status as InventoryStatus, item.category, item.requestedQuantity);
           updatedCount++;
         });
 
@@ -304,76 +304,111 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredInventory.map((item) => (
+          {filteredInventory.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-4 py-8 text-center text-sm text-stone-500">
+              {lang === 'hi' ? 'कोई आइटम नहीं मिला। दूसरा नाम खोजें।' : 'No matching items found. Try another search term.'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:[grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))]">
+              {filteredInventory.map((item) => {
+              const visual = resolveInventoryItemVisual(item);
+              const nativeContext = getIngredientNativeContextLabel(item, visual);
+              const showImage = visual.imageUrl !== null && failedImageIds[item.id] !== true;
+
+              return (
               <div key={item.id} className="flex h-full flex-col gap-4 rounded-2xl border border-stone-200 bg-stone-50/50 p-4 shadow-sm transition-shadow hover:shadow-md">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="text-3xl">{item.icon}</span>
+                    {showImage ? (
+                      <img
+                        src={visual.imageUrl}
+                        alt={visual.altText}
+                        className="h-12 w-12 rounded-2xl border border-stone-200 bg-white object-cover"
+                        loading="lazy"
+                        decoding="async"
+                        onError={() => handleVisualImageError(item.id)}
+                      />
+                    ) : (
+                      <span
+                        role="img"
+                        aria-label={visual.altText}
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200 bg-white text-2xl leading-none"
+                      >
+                        {visual.fallbackIcon}
+                      </span>
+                    )}
                     <div className="min-w-0">
                       <p className="break-words text-lg font-semibold leading-tight text-stone-900">
                         {lang === 'hi' && item.nameHi ? item.nameHi : item.name}
                       </p>
                       {lang === 'hi' && <p className="break-words text-sm text-stone-500">{item.name}</p>}
+                      {nativeContext !== null && (lang === 'en' || item.nameHi === undefined) ? (
+                        <span
+                          className="mt-1 inline-flex rounded-full border border-stone-200 bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-500"
+                          title={visual.catalogMatch?.canonicalName}
+                        >
+                          {nativeContext}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   {(item.status === 'low' || item.status === 'out') && (
                     <div className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-100 bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-600">
                       <ShoppingCart size={14} />
-                      <span className="whitespace-nowrap">{t.onList}</span>
+                      <span className="whitespace-nowrap">{inventoryCopy.onGroceryList}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-2 min-[560px]:grid-cols-3">
                   <button
                     onClick={() => handleStatusUpdate(item.id, 'in-stock', item.name, item.nameHi)}
-                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                    className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-bold leading-5 transition-colors ${
                       item.status === 'in-stock'
                         ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
                         : 'border-stone-200 bg-white text-stone-500 hover:bg-stone-100'
                     }`}
                   >
-                    {t.inStock}
+                    {inventoryCopy.statusLabels['in-stock']}
                   </button>
                   <button
                     onClick={() => handleStatusUpdate(item.id, 'low', item.name, item.nameHi)}
-                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                    className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-bold leading-5 transition-colors ${
                       item.status === 'low'
                         ? 'border-yellow-200 bg-yellow-100 text-yellow-700'
                         : 'border-stone-200 bg-white text-stone-500 hover:bg-stone-100'
                     }`}
                   >
-                    {t.low}
+                    {inventoryCopy.statusLabels.low}
                   </button>
                   <button
                     onClick={() => handleStatusUpdate(item.id, 'out', item.name, item.nameHi)}
-                    className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${
+                    className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-bold leading-5 transition-colors ${
                       item.status === 'out'
                         ? 'border-red-200 bg-red-100 text-red-700'
                         : 'border-stone-200 bg-white text-stone-500 hover:bg-stone-100'
                     }`}
                   >
-                    {t.out}
+                    {inventoryCopy.statusLabels.out}
                   </button>
                 </div>
 
                 {(item.status === 'low' || item.status === 'out') && (
                   <div className="mt-1">
                     {editingNoteId === item.id ? (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <div className="flex flex-col gap-2 min-[520px]:flex-row min-[520px]:items-center">
                         <input
                           type="text"
                           value={noteValue}
                           onChange={(e) => setNoteValue(e.target.value)}
-                          placeholder={lang === 'hi' ? 'कितना चाहिए? (उदा: 2kg)' : 'Quantity? (e.g. 2kg)'}
+                          placeholder={inventoryCopy.quantityPlaceholder}
                           className="min-w-0 flex-1 rounded-xl border border-stone-300 px-3 py-2 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                           autoFocus
                         />
                         <button
                           onClick={() => handleSaveNote(item.id, item.status)}
                           className="inline-flex items-center justify-center rounded-xl bg-stone-900 p-2 text-white transition-colors hover:bg-stone-800 sm:flex-none"
-                          title={t.save}
+                          title={inventoryCopy.saveNote}
                         >
                           <Check size={18} />
                         </button>
@@ -389,18 +424,20 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
                         <MessageSquarePlus size={16} />
                         {item.requestedQuantity ? (
                           <span className="font-medium text-stone-700">
-                            {lang === 'hi' ? 'नोट:' : 'Note:'} {item.requestedQuantity}
+                            {inventoryCopy.noteLabel}: {item.requestedQuantity}
                           </span>
                         ) : (
-                          <span>{t.addNote}</span>
+                          <span>{inventoryCopy.addNote}</span>
                         )}
                       </button>
                     )}
                   </div>
                 )}
               </div>
-            ))}
-          </div>
+              );
+              })}
+            </div>
+          )}
         </div>
       </section>
 

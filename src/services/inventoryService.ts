@@ -6,9 +6,10 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
-import { InventoryItem, InventoryStatus, Role } from '../types';
+import { InventoryItem, InventoryStatus, Role, UnknownIngredientQueueItem } from '../types';
 import { sanitizeFirestorePayload } from '../utils/firestorePayload';
 import { generateId } from '../utils/id';
+import { resolveIngredientVisual } from '../utils/ingredientVisuals';
 import { normalizePantryCategory } from '../utils/pantryCategory';
 import { buildPantryLog } from './logService';
 
@@ -29,6 +30,31 @@ interface AddUnlistedItemWithLogInput {
   category: string;
   requestedQuantity?: string;
   role: Role;
+}
+
+interface QueueUnknownIngredientInput {
+  db: Firestore;
+  householdId: string;
+  name: string;
+  status: InventoryStatus;
+  category: string;
+  requestedQuantity?: string;
+  role: Role;
+}
+
+interface ResolveUnknownIngredientQueueItemInput {
+  db: Firestore;
+  householdId: string;
+  queueItem: UnknownIngredientQueueItem;
+  role: Role;
+}
+
+function getResolvedNameHi(currentNameHi: string | undefined, resolvedNativeName: string | undefined): string | undefined {
+  if (typeof currentNameHi === 'string' && currentNameHi.trim().length > 0) {
+    return currentNameHi;
+  }
+
+  return resolvedNativeName;
 }
 
 function getInventoryAnomaly(item: InventoryItem, nextStatus: InventoryStatus): { verificationNeeded: boolean; anomalyReason?: string } {
@@ -83,9 +109,19 @@ export async function updateInventoryStatusWithLog(input: UpdateInventoryWithLog
 }
 
 export async function addInventoryItem(db: Firestore, householdId: string, item: InventoryItem): Promise<void> {
+  const category = normalizePantryCategory(item.category);
+  const visual = resolveIngredientVisual({
+    name: item.name,
+    nameHi: item.nameHi,
+    category,
+    icon: item.icon,
+  });
+
   const normalizedItem: InventoryItem = {
     ...item,
-    category: normalizePantryCategory(item.category),
+    category,
+    icon: visual.fallbackIcon,
+    nameHi: getResolvedNameHi(item.nameHi, visual.catalogMatch?.nativeName),
   };
 
   await setDoc(
@@ -101,12 +137,18 @@ export async function deleteInventoryItem(db: Firestore, householdId: string, it
 export async function addUnlistedItemWithLog(input: AddUnlistedItemWithLogInput): Promise<void> {
   const { db, householdId, name, status, category, requestedQuantity, role } = input;
   const timestampIso = new Date().toISOString();
+  const normalizedCategory = normalizePantryCategory(category);
+  const visual = resolveIngredientVisual({
+    name,
+    category: normalizedCategory,
+  });
   const inventoryItem: InventoryItem = {
     id: generateId(),
     name,
-    category: normalizePantryCategory(category),
+    nameHi: getResolvedNameHi(undefined, visual.catalogMatch?.nativeName),
+    category: normalizedCategory,
     status,
-    icon: '🆕',
+    icon: visual.fallbackIcon,
     requestedQuantity,
     lastUpdated: timestampIso,
     updatedBy: role,
@@ -129,6 +171,89 @@ export async function addUnlistedItemWithLog(input: AddUnlistedItemWithLogInput)
     sanitizeFirestorePayload(inventoryItem),
   );
   batch.set(doc(db, `households/${householdId}/logs`, log.id), log);
+  await batch.commit();
+}
+
+export async function queueUnknownIngredient(input: QueueUnknownIngredientInput): Promise<void> {
+  const { db, householdId, name, status, category, requestedQuantity, role } = input;
+  const queueId = generateId();
+  const createdAt = new Date().toISOString();
+  const normalizedCategory = normalizePantryCategory(category);
+
+  const queueItem: UnknownIngredientQueueItem = {
+    id: queueId,
+    name,
+    status: 'open',
+    requestedStatus: status,
+    category: normalizedCategory,
+    requestedQuantity,
+    createdAt,
+    createdBy: role,
+    resolution: undefined,
+    resolvedAt: undefined,
+    resolvedBy: undefined,
+    promotedInventoryItemId: undefined,
+  };
+
+  await setDoc(
+    doc(db, `households/${householdId}/unknownIngredientQueue`, queueId),
+    sanitizeFirestorePayload(queueItem),
+  );
+}
+
+export async function dismissUnknownIngredientQueueItem(input: ResolveUnknownIngredientQueueItemInput): Promise<void> {
+  const { db, householdId, queueItem, role } = input;
+  if (queueItem.status !== 'open') {
+    throw new Error(`Cannot dismiss queue item ${queueItem.id} because it is already resolved.`);
+  }
+
+  await updateDoc(doc(db, `households/${householdId}/unknownIngredientQueue`, queueItem.id), {
+    status: 'resolved',
+    resolution: 'dismissed',
+    resolvedAt: new Date().toISOString(),
+    resolvedBy: role,
+  });
+}
+
+export async function promoteUnknownIngredientQueueItem(input: ResolveUnknownIngredientQueueItemInput): Promise<void> {
+  const { db, householdId, queueItem, role } = input;
+  if (queueItem.status !== 'open') {
+    throw new Error(`Cannot promote queue item ${queueItem.id} because it is already resolved.`);
+  }
+
+  const timestampIso = new Date().toISOString();
+  const normalizedCategory = normalizePantryCategory(queueItem.category);
+  const visual = resolveIngredientVisual({
+    name: queueItem.name,
+    category: normalizedCategory,
+  });
+  const inventoryItemId = generateId();
+  const inventoryItem: InventoryItem = {
+    id: inventoryItemId,
+    name: queueItem.name,
+    nameHi: getResolvedNameHi(undefined, visual.catalogMatch?.nativeName),
+    category: normalizedCategory,
+    status: queueItem.requestedStatus,
+    icon: visual.fallbackIcon,
+    requestedQuantity: queueItem.requestedQuantity,
+    lastUpdated: timestampIso,
+    updatedBy: role,
+    verificationNeeded: false,
+    anomalyReason: '',
+  };
+
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, `households/${householdId}/inventory`, inventoryItemId),
+    sanitizeFirestorePayload(inventoryItem),
+  );
+  batch.update(doc(db, `households/${householdId}/unknownIngredientQueue`, queueItem.id), {
+    status: 'resolved',
+    resolution: 'promoted',
+    resolvedAt: timestampIso,
+    resolvedBy: role,
+    promotedInventoryItemId: inventoryItemId,
+  });
   await batch.commit();
 }
 

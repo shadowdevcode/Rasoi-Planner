@@ -1,15 +1,48 @@
 import React from 'react';
 import { ShoppingCart, CheckCircle2 } from 'lucide-react';
-import { InventoryItem, InventoryStatus } from '../types';
+import { InventoryItem, InventoryStatus, UiLanguage } from '../types';
+import { getIngredientNativeContextLabel, resolveInventoryItemVisual } from '../utils/ingredientVisuals';
 import { getPantryCategoryLabel } from '../utils/pantryCategory';
+import { getInventoryCopy } from '../i18n/copy';
 
 interface Props {
   inventory: InventoryItem[];
   onUpdateInventory: (id: string, status: InventoryStatus) => void;
+  language: UiLanguage;
 }
 
-export default function GroceryList({ inventory, onUpdateInventory }: Props) {
+export default function GroceryList({ inventory, onUpdateInventory, language }: Props) {
+  const [failedImageIds, setFailedImageIds] = React.useState<Record<string, true>>({});
   const lowStockItems = inventory.filter((item) => item.status === 'low' || item.status === 'out');
+  const inventoryCopy = getInventoryCopy(language);
+  const content = language === 'hi'
+    ? {
+        tag: 'ओनर किराना सूची',
+        title: 'किराना सूची',
+        helper: 'जो सामान कम हो रहा है या खत्म हो गया है, उसे यहां ट्रैक करें और भरने के बाद अपडेट करें।',
+        emptyTitle: 'अभी सब ठीक है',
+        emptyHelper: 'जब कोई आइटम कम होगा या खत्म होगा, वह यहां दिखेगा।',
+      }
+    : {
+        tag: 'Owner Grocery List',
+        title: 'Grocery List',
+        helper: 'Track items that are running low or out of stock, then update them once restocked.',
+        emptyTitle: 'All caught up',
+        emptyHelper: 'Nothing is currently running low. When pantry items drop to running low or out of stock, they will appear here.',
+      };
+
+  const handleVisualImageError = (itemId: string): void => {
+    setFailedImageIds((current) => {
+      if (current[itemId]) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [itemId]: true,
+      };
+    });
+  };
 
   return (
     <div className="w-full space-y-6">
@@ -18,11 +51,9 @@ export default function GroceryList({ inventory, onUpdateInventory }: Props) {
           <ShoppingCart size={24} />
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">Owner Grocery List</p>
-          <h2 className="mt-1 text-2xl font-semibold text-stone-900 sm:text-3xl">Grocery List</h2>
-          <p className="mt-1 text-sm text-stone-500">
-            Track running-low items and mark them bought when restocked.
-          </p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">{content.tag}</p>
+          <h2 className="mt-1 text-2xl font-semibold text-stone-900 sm:text-3xl">{content.title}</h2>
+          <p className="mt-1 text-sm leading-6 text-stone-500">{content.helper}</p>
         </div>
       </div>
 
@@ -31,18 +62,21 @@ export default function GroceryList({ inventory, onUpdateInventory }: Props) {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-500">
             <CheckCircle2 size={32} />
           </div>
-          <h3 className="text-xl font-semibold text-stone-800">All caught up</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-500">
-            Nothing is currently running low. When pantry items drop to low or out of stock, they will appear here.
-          </p>
+          <h3 className="text-xl font-semibold text-stone-800">{content.emptyTitle}</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-500">{content.emptyHelper}</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-[24px] border border-stone-200 bg-white shadow-sm">
           <ul className="divide-y divide-stone-100">
-            {lowStockItems.map((item) => (
+            {lowStockItems.map((item) => {
+              const visual = resolveInventoryItemVisual(item);
+              const nativeContext = getIngredientNativeContextLabel(item, visual);
+              const showImage = visual.imageUrl !== null && failedImageIds[item.id] !== true;
+
+              return (
               <li
                 key={item.id}
-                className="flex flex-col gap-4 px-4 py-4 transition-colors hover:bg-stone-50 sm:px-5 lg:flex-row lg:items-center lg:justify-between"
+                className="flex flex-col gap-4 px-4 py-4 transition-colors hover:bg-stone-50 sm:px-5 md:flex-row md:items-center md:justify-between"
               >
                 <div className="flex min-w-0 items-start gap-4">
                   <div
@@ -52,7 +86,24 @@ export default function GroceryList({ inventory, onUpdateInventory }: Props) {
                   />
                   <div className="min-w-0 space-y-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="shrink-0 text-xl">{item.icon}</span>
+                      {showImage ? (
+                        <img
+                          src={visual.imageUrl}
+                          alt={visual.altText}
+                          className="h-10 w-10 shrink-0 rounded-xl border border-stone-200 bg-white object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          onError={() => handleVisualImageError(item.id)}
+                        />
+                      ) : (
+                        <span
+                          role="img"
+                          aria-label={visual.altText}
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-white text-lg leading-none"
+                        >
+                          {visual.fallbackIcon}
+                        </span>
+                      )}
                       <span className="min-w-0 break-words text-lg font-semibold leading-6 text-stone-800">
                         {item.name}
                       </span>
@@ -62,21 +113,30 @@ export default function GroceryList({ inventory, onUpdateInventory }: Props) {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-stone-500">
-                      {getPantryCategoryLabel(item.category)} • {item.status === 'out' ? 'Finished' : 'Running Low'}
+                    {nativeContext !== null ? (
+                      <span
+                        className="inline-flex rounded-full border border-stone-200 bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-500"
+                        title={visual.catalogMatch?.canonicalName}
+                      >
+                        {nativeContext}
+                      </span>
+                    ) : null}
+                    <p className="text-sm leading-6 text-stone-500">
+                      {getPantryCategoryLabel(item.category)} • {inventoryCopy.statusLabels[item.status]}
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => onUpdateInventory(item.id, 'in-stock')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-100 px-4 py-2.5 font-medium text-emerald-700 transition-colors hover:bg-emerald-200 sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-100 px-4 py-2.5 text-center font-medium text-emerald-700 transition-colors hover:bg-emerald-200 md:w-auto"
                   data-testid={`grocery-mark-bought-${item.id}`}
                 >
                   <CheckCircle2 size={18} />
-                  Mark Bought
+                  {inventoryCopy.markRestocked}
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       )}

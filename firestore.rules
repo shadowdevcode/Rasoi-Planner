@@ -45,6 +45,21 @@ service cloud.firestore {
     //   - newStatus: string (required, 'in-stock', 'low', 'out')
     //   - timestamp: string (required, ISO date)
     //   - role: string (required, 'owner', 'cook')
+    //
+    // Collection: households/{householdId}/unknownIngredientQueue
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (required, max 100 chars)
+    //   - category: string (required, max 50 chars)
+    //   - status: string (required, 'open', 'resolved')
+    //   - requestedStatus: string (required, 'in-stock', 'low', 'out')
+    //   - createdAt: string (required, ISO date)
+    //   - createdBy: string (required, 'owner', 'cook')
+    //   - requestedQuantity: string (optional, max 50 chars)
+    //   - resolvedAt: string (optional, ISO date)
+    //   - resolvedBy: string (optional, 'owner', 'cook')
+    //   - resolution: string (optional, 'promoted', 'dismissed')
+    //   - promotedInventoryItemId: string (optional, max 100 chars)
     // ===============================================================
 
     function isAuthenticated() {
@@ -129,6 +144,43 @@ service cloud.firestore {
              (!('cookLanguage' in data) || data.cookLanguage in ['en', 'hi']);
     }
 
+    function isValidUnknownIngredientQueueItem(data) {
+      return data.keys().hasAll(['name', 'category', 'status', 'requestedStatus', 'createdAt', 'createdBy']) &&
+             isValidString(data.name, 1, 100) &&
+             isValidString(data.category, 1, 50) &&
+             data.status in ['open', 'resolved'] &&
+             data.requestedStatus in ['in-stock', 'low', 'out'] &&
+             data.createdAt is string &&
+             data.createdBy in ['owner', 'cook'] &&
+             (!('requestedQuantity' in data) || isValidOptionalString(data.requestedQuantity, 0, 50)) &&
+             (!('resolvedAt' in data) || data.resolvedAt is string) &&
+             (!('resolvedBy' in data) || data.resolvedBy in ['owner', 'cook']) &&
+             (!('resolution' in data) || data.resolution in ['promoted', 'dismissed']) &&
+             (!('promotedInventoryItemId' in data) || isValidOptionalString(data.promotedInventoryItemId, 1, 100));
+    }
+
+    function isValidUnknownQueueCreate(householdId, data) {
+      return data.status == 'open' &&
+             data.createdBy == effectiveRole(householdId) &&
+             !('resolvedAt' in data) &&
+             !('resolvedBy' in data) &&
+             !('resolution' in data) &&
+             !('promotedInventoryItemId' in data);
+    }
+
+    function isValidUnknownQueueResolve(householdId, currentData, nextData) {
+      return currentData.status == 'open' &&
+             nextData.status == 'resolved' &&
+             nextData.createdAt == currentData.createdAt &&
+             nextData.createdBy == currentData.createdBy &&
+             nextData.name == currentData.name &&
+             nextData.category == currentData.category &&
+             nextData.requestedStatus == currentData.requestedStatus &&
+             nextData.resolvedBy == effectiveRole(householdId) &&
+             nextData.resolution in ['promoted', 'dismissed'] &&
+             nextData.resolvedAt is string;
+    }
+
     function isValidInventoryWrite(householdId, data) {
       return !('updatedBy' in data) || data.updatedBy == effectiveRole(householdId);
     }
@@ -197,6 +249,17 @@ service cloud.firestore {
                          pantryLogMatchesInventoryWrite(householdId, request.resource.data);
         allow update: if false; // Logs are immutable
         allow delete: if isOwner(householdId);
+      }
+
+      match /unknownIngredientQueue/{queueId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isHouseholdMember(householdId) &&
+                         isValidUnknownIngredientQueueItem(request.resource.data) &&
+                         isValidUnknownQueueCreate(householdId, request.resource.data);
+        allow update: if isOwner(householdId) &&
+                         isValidUnknownIngredientQueueItem(request.resource.data) &&
+                         isValidUnknownQueueResolve(householdId, resource.data, request.resource.data);
+        allow delete: if false;
       }
     }
 

@@ -31,6 +31,18 @@ function getMealDetailValue(meal: MealPlan | undefined, field: MealDetailField):
   return meal[field] ?? '';
 }
 
+function formatWeekRangeLabel(weekDays: Date[]): string {
+  return `${weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
+function formatWeekdayLabel(day: Date): string {
+  return day.toLocaleDateString('en-US', { weekday: 'short' });
+}
+
+function formatMonthDayLabel(day: Date): string {
+  return day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export default function MealPlanner({ meals, onUpdateMeal }: Props) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [detailDrafts, setDetailDrafts] = useState<MealDetailDrafts>({});
@@ -50,6 +62,7 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
   };
 
   const weekDays = getWeekDays(currentDate);
+  const weekRangeLabel = formatWeekRangeLabel(weekDays);
 
   const prevWeek = (): void => {
     const newDate = new Date(currentDate);
@@ -125,26 +138,23 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
   return (
     <div className="space-y-5">
       <div className="rounded-[24px] border border-stone-200 bg-white px-3 py-3 shadow-sm sm:px-4 lg:px-5">
-        <div className="flex items-center justify-between gap-2 rounded-[20px] bg-stone-50 px-2 py-3 sm:px-3 sm:py-3.5">
+        <div className="flex flex-col gap-3 rounded-[20px] bg-stone-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3.5">
           <button
             onClick={prevWeek}
             data-testid="meal-week-prev"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+            className="flex h-11 w-11 items-center justify-center self-start rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
             aria-label="Previous week"
           >
             <ChevronLeft size={22} />
           </button>
           <div className="min-w-0 text-center">
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">Weekly Meal Plan</p>
-            <h2 className="mt-1 text-lg font-semibold text-stone-900 sm:text-2xl">
-              {weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} -{' '}
-              {weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            </h2>
+            <h2 className="mt-1 text-lg font-semibold text-stone-900 sm:text-2xl">{weekRangeLabel}</h2>
           </div>
           <button
             onClick={nextWeek}
             data-testid="meal-week-next"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+            className="flex h-11 w-11 items-center justify-center self-end rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 sm:self-auto"
             aria-label="Next week"
           >
             <ChevronRight size={22} />
@@ -152,7 +162,7 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+      <div className="grid grid-cols-1 gap-4 sm:[grid-template-columns:repeat(auto-fit,minmax(17rem,1fr))] xl:gap-5">
         {weekDays.map((day, index) => {
           const dateStr = getLocalDateKey(day);
           const isToday = dateStr === todayDateKey;
@@ -177,9 +187,10 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
                       isToday ? 'text-orange-700' : 'text-stone-500'
                     }`}
                   >
-                    {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                    {formatWeekdayLabel(day)}
                   </p>
                   <p className="mt-2 text-3xl font-semibold leading-none text-stone-900">{day.getDate()}</p>
+                  <p className="mt-1 text-sm text-stone-500">{formatMonthDayLabel(day)}</p>
                 </div>
                 {isToday ? (
                   <span className="rounded-full border border-orange-200 bg-orange-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700">
@@ -189,7 +200,7 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
               </div>
 
               <div className="mt-5 flex flex-1 flex-col gap-5">
-                <div className="space-y-2.5">
+                <div className="rounded-[22px] border border-stone-200/70 bg-stone-50/70 p-4">
                   <div className="flex items-center gap-2 text-amber-600">
                     <Sun size={16} />
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em]">Breakfast / Lunch</span>
@@ -199,11 +210,11 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
                     onChange={(event) => handleMealChange(dateStr, 'morning', event.target.value)}
                     data-testid={`meal-day-${index}-morning`}
                     placeholder="Plan morning/lunch..."
-                    className="min-h-32 w-full resize-y rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3.5 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-200"
+                    className="mt-3 min-h-28 w-full resize-y rounded-2xl border border-stone-200 bg-white px-4 py-3.5 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
                   />
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="rounded-[22px] border border-stone-200/70 bg-stone-50/70 p-4">
                   <div className="flex items-center gap-2 text-indigo-600">
                     <Moon size={16} />
                     <span className="text-[11px] font-bold uppercase tracking-[0.18em]">Dinner</span>
@@ -213,7 +224,7 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
                     onChange={(event) => handleMealChange(dateStr, 'evening', event.target.value)}
                     data-testid={`meal-day-${index}-evening`}
                     placeholder="Dinner"
-                    className="min-h-32 w-full resize-y rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3.5 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-200"
+                    className="mt-3 min-h-28 w-full resize-y rounded-2xl border border-stone-200 bg-white px-4 py-3.5 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
                   />
                 </div>
 
@@ -224,7 +235,7 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">Details</p>
-                      <p className="mt-1 text-sm text-stone-500">Add leftovers and notes here. Changes save after a short pause or when you leave the field.</p>
+                      <p className="mt-1 text-sm leading-6 text-stone-500">Add leftovers and notes here. Changes save after a short pause or when you leave the field.</p>
                     </div>
                   </div>
                   <div className="grid gap-4">
