@@ -6,6 +6,7 @@ import { sanitizeFirestorePayload } from '../../src/utils/firestorePayload';
 import { getIngredientNativeContextLabel, resolveIngredientVisual } from '../../src/utils/ingredientVisuals';
 import {
   buildUnknownQueueTargetFingerprint,
+  classifyUnknownQueueLoadFailure,
   classifyHouseholdMembershipProbe,
   getUnknownQueueLoadErrorMessage,
   isFirestoreFailedPreconditionError,
@@ -357,6 +358,39 @@ function testUnknownQueueErrorParsingAndMessaging(): void {
     getUnknownQueueLoadErrorMessage(permissionDenied, 'non-member'),
     'Unknown ingredient queue access denied. Household membership mismatch suspected.',
   );
+  assert.deepEqual(
+    classifyUnknownQueueLoadFailure({
+      error: permissionDenied,
+      membershipProbeResult: 'owner',
+      plainReadProbeResult: 'permission-denied',
+    }),
+    {
+      diagnosticKind: 'likely-live-rules-drift',
+      userMessage: 'Review queue is temporarily unavailable.',
+    },
+  );
+  assert.deepEqual(
+    classifyUnknownQueueLoadFailure({
+      error: permissionDenied,
+      membershipProbeResult: 'owner',
+      plainReadProbeResult: 'succeeded',
+    }),
+    {
+      diagnosticKind: 'query-specific-denial',
+      userMessage: 'Review queue is temporarily unavailable.',
+    },
+  );
+  assert.deepEqual(
+    classifyUnknownQueueLoadFailure({
+      error: permissionDenied,
+      membershipProbeResult: 'non-member',
+      plainReadProbeResult: 'not-run',
+    }),
+    {
+      diagnosticKind: 'membership-mismatch',
+      userMessage: 'Review queue is unavailable for this account.',
+    },
+  );
 
   const failedPrecondition = toFirestoreListenerErrorInfo({
     code: 'failed-precondition',
@@ -368,11 +402,33 @@ function testUnknownQueueErrorParsingAndMessaging(): void {
     getUnknownQueueLoadErrorMessage(failedPrecondition, 'owner'),
     'Unknown ingredient queue index is missing. Showing fallback order while index is provisioned.',
   );
+  assert.deepEqual(
+    classifyUnknownQueueLoadFailure({
+      error: failedPrecondition,
+      membershipProbeResult: 'owner',
+      plainReadProbeResult: 'not-run',
+    }),
+    {
+      diagnosticKind: 'index-missing',
+      userMessage: 'Review queue order is temporarily unavailable.',
+    },
+  );
 
   const unknownError = toFirestoreListenerErrorInfo(new Error('boom'));
   assert.equal(isFirestoreFailedPreconditionError(unknownError), false);
   assert.equal(isFirestorePermissionDeniedError(unknownError), false);
   assert.equal(getUnknownQueueLoadErrorMessage(unknownError, null), 'Failed to load unknown ingredient queue.');
+  assert.deepEqual(
+    classifyUnknownQueueLoadFailure({
+      error: unknownError,
+      membershipProbeResult: null,
+      plainReadProbeResult: 'failed',
+    }),
+    {
+      diagnosticKind: 'unknown-load-failure',
+      userMessage: 'Review queue is temporarily unavailable.',
+    },
+  );
 }
 
 function testUnknownQueueFallbackSortOrder(): void {

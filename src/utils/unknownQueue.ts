@@ -20,7 +20,20 @@ export interface HouseholdMembershipProbeInput {
   userUid: string;
 }
 
+export type UnknownQueuePermissionDeniedKind =
+  | 'membership-mismatch'
+  | 'likely-live-rules-drift'
+  | 'query-specific-denial'
+  | 'unknown-permission-denial';
+
+export type UnknownQueueReadProbeResult = 'succeeded' | 'permission-denied' | 'failed' | 'not-run';
+
 export type HouseholdMembershipProbeResult = 'owner' | 'cook' | 'non-member' | 'household-missing';
+
+export interface UnknownQueueLoadFailureClassification {
+  diagnosticKind: UnknownQueuePermissionDeniedKind | 'index-missing' | 'unknown-load-failure';
+  userMessage: string;
+}
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== 'object' || value === null) {
@@ -97,6 +110,54 @@ export function getUnknownQueueLoadErrorMessage(
   }
 
   return 'Failed to load unknown ingredient queue.';
+}
+
+export function classifyUnknownQueueLoadFailure(input: {
+  error: FirestoreListenerErrorInfo;
+  membershipProbeResult: HouseholdMembershipProbeResult | null;
+  plainReadProbeResult: UnknownQueueReadProbeResult;
+}): UnknownQueueLoadFailureClassification {
+  const { error, membershipProbeResult, plainReadProbeResult } = input;
+
+  if (isFirestorePermissionDeniedError(error)) {
+    if (membershipProbeResult === 'non-member' || membershipProbeResult === 'household-missing') {
+      return {
+        diagnosticKind: 'membership-mismatch',
+        userMessage: 'Review queue is unavailable for this account.',
+      };
+    }
+
+    if (plainReadProbeResult === 'succeeded') {
+      return {
+        diagnosticKind: 'query-specific-denial',
+        userMessage: 'Review queue is temporarily unavailable.',
+      };
+    }
+
+    if (plainReadProbeResult === 'permission-denied') {
+      return {
+        diagnosticKind: 'likely-live-rules-drift',
+        userMessage: 'Review queue is temporarily unavailable.',
+      };
+    }
+
+    return {
+      diagnosticKind: 'unknown-permission-denial',
+      userMessage: 'Review queue is temporarily unavailable.',
+    };
+  }
+
+  if (isFirestoreFailedPreconditionError(error)) {
+    return {
+      diagnosticKind: 'index-missing',
+      userMessage: 'Review queue order is temporarily unavailable.',
+    };
+  }
+
+  return {
+    diagnosticKind: 'unknown-load-failure',
+    userMessage: 'Review queue is temporarily unavailable.',
+  };
 }
 
 export function sortUnknownIngredientQueueItemsByCreatedAt(items: UnknownIngredientQueueItem[]): UnknownIngredientQueueItem[] {

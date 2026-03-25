@@ -20,6 +20,7 @@ interface Props {
   onClearAnomaly: (id: string) => void;
   logs: PantryLog[];
   unknownIngredientQueue: UnknownIngredientQueueItem[];
+  unknownQueueWarning: string | null;
   onPromoteUnknownIngredient: (queueItem: UnknownIngredientQueueItem) => void;
   onDismissUnknownIngredient: (queueItem: UnknownIngredientQueueItem) => void;
   language: UiLanguage;
@@ -71,7 +72,7 @@ function getRoleLabel(language: UiLanguage, role: Role): string {
   return role === 'owner' ? 'Owner' : 'Cook';
 }
 
-export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventory, onDeleteInventoryItem, onClearAnomaly, logs, unknownIngredientQueue, onPromoteUnknownIngredient, onDismissUnknownIngredient, language }: Props) {
+export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventory, onDeleteInventoryItem, onClearAnomaly, logs, unknownIngredientQueue, unknownQueueWarning, onPromoteUnknownIngredient, onDismissUnknownIngredient, language }: Props) {
   const [newItemName, setNewItemName] = useState<string>('');
   const [newItemCategory, setNewItemCategory] = useState<PantryCategoryKey>('spices');
   const [newItemQuantity, setNewItemQuantity] = useState<string>('');
@@ -108,6 +109,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
         queueTitle: 'अज्ञात सामग्री समीक्षा कतार',
         queueHelper: 'कुक की नई अनमैच सामग्री रिक्वेस्ट यहां आएगी। पेंट्री में प्रमोट करें या खारिज करें।',
         queueEmpty: 'समीक्षा के लिए कोई लंबित रिक्वेस्ट नहीं है।',
+        queueWarning: 'समीक्षा कतार अस्थायी रूप से उपलब्ध नहीं है। बाकी वर्कस्पेस सामान्य रूप से काम करता रहेगा।',
         queueRequestedBy: 'रिक्वेस्ट',
         queuePromote: 'प्रमोट करें',
         queueDismiss: 'खारिज करें',
@@ -144,6 +146,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
         queueTitle: 'Unknown Ingredient Review Queue',
         queueHelper: 'New unmatched ingredient requests from cook are collected here for owner review.',
         queueEmpty: 'No pending unknown ingredient requests.',
+        queueWarning: 'Review queue is temporarily unavailable. The rest of the workspace is still usable.',
         queueRequestedBy: 'Requested',
         queuePromote: 'Promote',
         queueDismiss: 'Dismiss',
@@ -412,6 +415,12 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                 <h3 className="text-lg font-semibold text-stone-900">{content.queueTitle}</h3>
                 <p className="text-sm text-stone-500">{content.queueHelper}</p>
               </div>
+              {unknownQueueWarning ? (
+                <div className="mt-4 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                  <p>{unknownQueueWarning || content.queueWarning}</p>
+                </div>
+              ) : null}
               {openQueueItems.length === 0 ? (
                 <p className="mt-4 text-sm text-stone-500">{content.queueEmpty}</p>
               ) : (

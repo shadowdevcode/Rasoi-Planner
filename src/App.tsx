@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -31,10 +32,12 @@ import { getAppCopy } from './i18n/copy';
 import firebaseConfig from '../firebase-applet-config.json';
 import {
   buildUnknownQueueTargetFingerprint,
+  classifyUnknownQueueLoadFailure,
   classifyHouseholdMembershipProbe,
-  getUnknownQueueLoadErrorMessage,
   HouseholdMembershipProbeResult,
   isFirestoreFailedPreconditionError,
+  isFirestorePermissionDeniedError,
+  type UnknownQueueReadProbeResult,
   sortUnknownIngredientQueueItemsByCreatedAt,
   toFirestoreListenerErrorInfo,
 } from './utils/unknownQueue';
@@ -80,6 +83,7 @@ export default function App() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
   const [uiFeedback, setUiFeedback] = useState<UiFeedback | null>(null);
+  const [unknownQueueWarning, setUnknownQueueWarning] = useState<string | null>(null);
   const isOwner = role === 'owner';
   const ownerLanguage: UiLanguage = householdData?.ownerLanguage ?? 'en';
   const cookLanguage: UiLanguage = householdData?.cookLanguage ?? 'hi';
@@ -99,6 +103,7 @@ export default function App() {
         setHouseholdId(null);
         setHouseholdData(null);
         setAccessRevoked(false);
+        setUnknownQueueWarning(null);
       }
     });
 
@@ -221,6 +226,7 @@ export default function App() {
 
         const handleUnknownQueueLoaded = (items: UnknownIngredientQueueItem[]): void => {
           setUnknownIngredientQueue(items);
+          setUnknownQueueWarning(null);
           hasLoadedUnknownQueue = true;
           markInitialViewReady();
         };
@@ -256,6 +262,70 @@ export default function App() {
           membershipProbeResult,
         });
 
+        const probeUnknownQueuePlainRead = async (): Promise<UnknownQueueReadProbeResult> => {
+          try {
+            await getDocs(collection(db, `households/${resolved.householdId}/unknownIngredientQueue`));
+            return 'succeeded';
+          } catch (probeError) {
+            const parsedProbeError = toFirestoreListenerErrorInfo(probeError);
+            if (isFirestorePermissionDeniedError(parsedProbeError)) {
+              return 'permission-denied';
+            }
+
+            console.error('unknown_queue_plain_read_probe_failed', {
+              error: probeError,
+              householdId: resolved.householdId,
+              code: parsedProbeError.code,
+              message: parsedProbeError.message,
+              projectId: firebaseConfig.projectId,
+              databaseId: firebaseConfig.firestoreDatabaseId,
+              buildId: appBuildId,
+              uid: user.uid,
+              email: user.email ?? null,
+              path: unknownQueuePath,
+              targetFingerprint,
+              membershipProbeResult,
+            });
+            return 'failed';
+          }
+        };
+
+        const applyUnknownQueueFailure = async (
+          parsedError: ReturnType<typeof toFirestoreListenerErrorInfo>,
+          logLabel: 'unknown_queue_snapshot_failed' | 'unknown_queue_snapshot_fallback_failed',
+          error: unknown,
+        ): Promise<void> => {
+          const plainReadProbeResult = isFirestorePermissionDeniedError(parsedError)
+            ? await probeUnknownQueuePlainRead()
+            : 'not-run';
+          const classification = classifyUnknownQueueLoadFailure({
+            error: parsedError,
+            membershipProbeResult,
+            plainReadProbeResult,
+          });
+
+          console.error(logLabel, {
+            error,
+            householdId: resolved.householdId,
+            code: parsedError.code,
+            message: parsedError.message,
+            diagnosticKind: classification.diagnosticKind,
+            plainReadProbeResult,
+            projectId: firebaseConfig.projectId,
+            databaseId: firebaseConfig.firestoreDatabaseId,
+            buildId: appBuildId,
+            uid: user.uid,
+            email: user.email ?? null,
+            path: unknownQueuePath,
+            targetFingerprint,
+            membershipProbeResult,
+          });
+
+          setUnknownQueueWarning(appendBuildIdToDiagnosticMessage(classification.userMessage, appBuildId));
+          hasLoadedUnknownQueue = true;
+          markInitialViewReady();
+        };
+
         const subscribeUnknownQueueFallback = (): void => {
           if (unknownQueueFallbackUnsub !== null) {
             return;
@@ -272,29 +342,7 @@ export default function App() {
             },
             (error) => {
               const parsedError = toFirestoreListenerErrorInfo(error);
-              console.error('unknown_queue_snapshot_fallback_failed', {
-                error,
-                householdId: resolved.householdId,
-                code: parsedError.code,
-                message: parsedError.message,
-                projectId: firebaseConfig.projectId,
-                databaseId: firebaseConfig.firestoreDatabaseId,
-                buildId: appBuildId,
-                uid: user.uid,
-                email: user.email ?? null,
-                path: unknownQueuePath,
-                targetFingerprint,
-                membershipProbeResult,
-              });
-              setUiFeedback({
-                kind: 'error',
-                message: appendBuildIdToDiagnosticMessage(
-                  getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
-                  appBuildId,
-                ),
-              });
-              hasLoadedUnknownQueue = true;
-              markInitialViewReady();
+              void applyUnknownQueueFailure(parsedError, 'unknown_queue_snapshot_fallback_failed', error);
             },
           );
         };
@@ -310,46 +358,17 @@ export default function App() {
           },
           (error) => {
             const parsedError = toFirestoreListenerErrorInfo(error);
-            console.error('unknown_queue_snapshot_failed', {
-              error,
-              householdId: resolved.householdId,
-              code: parsedError.code,
-              message: parsedError.message,
-              projectId: firebaseConfig.projectId,
-              databaseId: firebaseConfig.firestoreDatabaseId,
-              buildId: appBuildId,
-              uid: user.uid,
-              email: user.email ?? null,
-              path: unknownQueuePath,
-              targetFingerprint,
-              membershipProbeResult,
-            });
-
             if (isFirestoreFailedPreconditionError(parsedError)) {
               if (unknownQueueUnsub !== null) {
                 unknownQueueUnsub();
                 unknownQueueUnsub = null;
               }
-              setUiFeedback({
-                kind: 'error',
-                message: appendBuildIdToDiagnosticMessage(
-                  getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
-                  appBuildId,
-                ),
-              });
+              setUnknownQueueWarning(appendBuildIdToDiagnosticMessage('Review queue order is temporarily unavailable.', appBuildId));
               subscribeUnknownQueueFallback();
               return;
             }
 
-            setUiFeedback({
-              kind: 'error',
-              message: appendBuildIdToDiagnosticMessage(
-                getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
-                appBuildId,
-              ),
-            });
-            hasLoadedUnknownQueue = true;
-            markInitialViewReady();
+            void applyUnknownQueueFailure(parsedError, 'unknown_queue_snapshot_failed', error);
           },
         );
       } catch (error) {
@@ -799,6 +818,7 @@ export default function App() {
             onClearAnomaly={handleClearAnomaly}
             logs={logs}
             unknownIngredientQueue={unknownIngredientQueue}
+            unknownQueueWarning={unknownQueueWarning}
             onPromoteUnknownIngredient={handlePromoteUnknownIngredient}
             onDismissUnknownIngredient={handleDismissUnknownIngredient}
             language={ownerLanguage}
