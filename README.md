@@ -244,12 +244,13 @@ This project uses GitHub as the deployment source of truth.
 - Required check name for branch protection: `verify-local`
 - CI command chain:
   - `npm ci`
-  - `npm run verify:local`
-  - `verify-local` includes `npm run rules:target:check`
+  - `npm run verify:core`
+  - `verify-core` includes `npm run rules:target:check`
 - `main` push additional automation:
   - Detect Firestore-related file changes.
   - Deploy Firestore rules automatically when changed.
   - Run production smoke test for owner-allow and non-member-deny unknown queue reads.
+- E2E is executed as a separate non-blocking CI job (`e2e`) to avoid blocking production rules deploy on browser flakiness.
 
 ### Local push gate (Husky)
 - Husky install hook is configured via `npm run prepare`.
