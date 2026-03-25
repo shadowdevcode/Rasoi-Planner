@@ -1,3 +1,5 @@
+import { normalizePantryCategory } from '../../../src/utils/pantryCategory';
+
 interface GenerateContentInput {
   contents: string;
 }
@@ -120,7 +122,7 @@ function buildAiResponse(contents: string): string {
   if (normalizedInput.includes('dhania')) {
     unlistedItems.push({
       name: 'Dhania',
-      category: 'Veggies',
+      category: normalizePantryCategory('Veggies'),
       requestedQuantity,
       status: guessStatus(cookInput),
     });
@@ -128,7 +130,7 @@ function buildAiResponse(contents: string): string {
   if (normalizedInput.includes('jeera') && !inventory.some((item) => normalize(item.name).includes('jeera'))) {
     unlistedItems.push({
       name: 'Jeera',
-      category: 'Spices',
+      category: normalizePantryCategory('Spices'),
       requestedQuantity,
       status: guessStatus(cookInput),
     });

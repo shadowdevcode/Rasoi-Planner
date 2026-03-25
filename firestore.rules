@@ -10,6 +10,8 @@ service cloud.firestore {
     // Fields:
     //   - ownerId: string (required)
     //   - cookEmail: string (optional)
+    //   - ownerLanguage: string (optional, 'en' | 'hi')
+    //   - cookLanguage: string (optional, 'en' | 'hi')
     //
     // Collection: households/{householdId}/inventory
     // Document ID: auto-generated or custom string
@@ -122,7 +124,9 @@ service cloud.firestore {
              (
                !('cookEmail' in data) ||
                (data.cookEmail is string && (data.cookEmail == '' || isNormalizedEmail(data.cookEmail)))
-             );
+             ) &&
+             (!('ownerLanguage' in data) || data.ownerLanguage in ['en', 'hi']) &&
+             (!('cookLanguage' in data) || data.cookLanguage in ['en', 'hi']);
     }
 
     function isValidInventoryWrite(householdId, data) {

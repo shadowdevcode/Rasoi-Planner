@@ -185,14 +185,20 @@ async function fillByPlaceholder(page, placeholder, value) {
   }
 }
 
-async function setFirstTextarea(page, placeholder, value) {
-  const selector = `textarea[placeholder="${placeholder}"]`;
+async function fillByTestId(page, testId, value) {
+  const selector = `[data-testid="${testId}"]`;
   await page.waitForSelector(selector);
   await page.click(selector, { clickCount: 3 });
   await page.keyboard.press('Backspace');
   if (value.length > 0) {
     await page.type(selector, value);
   }
+}
+
+async function clickByTestId(page, testId) {
+  const selector = `[data-testid="${testId}"]`;
+  await page.waitForSelector(selector);
+  await page.click(selector);
 }
 
 async function setRowSelectValue(page, rowText, nextValue) {
@@ -261,18 +267,25 @@ async function setCookStatus(page, itemText, buttonText) {
   const didClick = await page.evaluate(
     ({ expectedItemText, expectedButtonText }) => {
       const normalize = (input) => input.replace(/\s+/g, ' ').trim();
+      const statusLabels = expectedButtonText === 'Full'
+        ? ['Full', 'पूरा है']
+        : expectedButtonText === 'Low'
+          ? ['Low', 'कम है']
+          : expectedButtonText === 'Empty'
+            ? ['Empty', 'खत्म']
+            : [expectedButtonText];
       const cards = Array.from(document.querySelectorAll('section div'));
       const card = cards.find((element) => (
         element instanceof HTMLElement
         && normalize(element.textContent ?? '').includes(expectedItemText)
-        && Array.from(element.querySelectorAll('button')).some((button) => normalize(button.textContent ?? '') === expectedButtonText)
+        && Array.from(element.querySelectorAll('button')).some((button) => statusLabels.includes(normalize(button.textContent ?? '')))
       ));
 
       if (!(card instanceof HTMLElement)) {
         return false;
       }
 
-      const button = Array.from(card.querySelectorAll('button')).find((element) => normalize(element.textContent ?? '') === expectedButtonText);
+      const button = Array.from(card.querySelectorAll('button')).find((element) => statusLabels.includes(normalize(element.textContent ?? '')));
       if (!(button instanceof HTMLElement)) {
         return false;
       }
@@ -297,7 +310,7 @@ async function setCookNote(page, itemText, noteValue) {
       && normalize(element.textContent ?? '').includes(expectedItemText)
       && Array.from(element.querySelectorAll('button')).some((button) => {
         const text = normalize(button.textContent ?? '');
-        return text === 'Add Note' || text.startsWith('Note:');
+        return text === 'Add Note' || text.startsWith('Note:') || text === 'नोट लिखें' || text.startsWith('नोट:');
       })
     ));
 
@@ -307,7 +320,7 @@ async function setCookNote(page, itemText, noteValue) {
 
     const button = Array.from(card.querySelectorAll('button')).find((element) => {
       const text = normalize(element.textContent ?? '');
-      return text === 'Add Note' || text.startsWith('Note:');
+      return text === 'Add Note' || text.startsWith('Note:') || text === 'नोट लिखें' || text.startsWith('नोट:');
     });
     if (!(button instanceof HTMLElement)) {
       return false;
@@ -321,13 +334,25 @@ async function setCookNote(page, itemText, noteValue) {
     throw new Error(`Unable to open note editor for ${itemText}.`);
   }
 
-  const noteSelector = 'input[placeholder="Quantity? (e.g. 2kg)"]';
+  const noteSelector = 'input[placeholder="Quantity? (e.g. 2kg)"], input[placeholder="कितना चाहिए? (उदा: 2kg)"]';
   await page.waitForSelector(noteSelector);
-  await fillByPlaceholder(page, 'Quantity? (e.g. 2kg)', noteValue);
-  await page.waitForSelector('button[title="Save"]');
+  await page.evaluate(() => {
+    const target = document.querySelector('input[placeholder="Quantity? (e.g. 2kg)"], input[placeholder="कितना चाहिए? (उदा: 2kg)"]');
+    if (!(target instanceof HTMLInputElement)) {
+      throw new Error('Note input not found.');
+    }
+    target.focus();
+    target.select();
+  });
+  await page.keyboard.press('Backspace');
+  await page.type('input[placeholder="Quantity? (e.g. 2kg)"], input[placeholder="कितना चाहिए? (उदा: 2kg)"]', noteValue);
+  await page.waitForSelector('button[title="Save"], button[title="सेव"]');
   await page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll('button'));
-    const saveButton = buttons.find((element) => element.getAttribute('title') === 'Save');
+    const saveButton = buttons.find((element) => {
+      const title = element.getAttribute('title');
+      return title === 'Save' || title === 'सेव';
+    });
 
     if (!(saveButton instanceof HTMLElement)) {
       throw new Error('Save button not found.');
@@ -350,7 +375,7 @@ async function runOwnerCoreFlow(page) {
   const repro = [
     'Open /?e2e-role=owner.',
     'Click "Sign in with Google".',
-    'Edit the first morning meal entry.',
+    'Edit the first morning meal entry and save leftovers/notes.',
     'Open Grocery List and mark Tomatoes as bought.',
     'Open Pantry & Logs, add Jeera, then mark it Running Low.',
     'Open Activity Logs and verify the new entry is shown.',
@@ -361,19 +386,37 @@ async function runOwnerCoreFlow(page) {
   await clickExactText(page, 'button', 'Sign in with Google');
   await waitForText(page, 'Owner View', uiTimeoutMs);
   await waitForText(page, 'Household Settings', uiTimeoutMs);
-  await setFirstTextarea(page, 'Plan morning/lunch...', 'E2E Poha and fruit');
+  await fillByTestId(page, 'meal-day-0-morning', 'E2E Poha and fruit');
   await page.waitForFunction(
-    () => Array.from(document.querySelectorAll('textarea')).some((element) => element instanceof HTMLTextAreaElement && element.value === 'E2E Poha and fruit'),
+    () => Array.from(document.querySelectorAll('[data-testid="meal-day-0-morning"]')).some((element) => element instanceof HTMLTextAreaElement && element.value === 'E2E Poha and fruit'),
+    { timeout: uiTimeoutMs },
+  );
+  await fillByTestId(page, 'meal-day-0-leftovers', 'E2E leftover dal');
+  await page.keyboard.press('Tab');
+  await fillByTestId(page, 'meal-day-0-notes', 'E2E less spice for kids');
+  await page.keyboard.press('Tab');
+  await sleep(700);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForText(page, 'Owner View', uiTimeoutMs);
+  await page.waitForFunction(
+    () => {
+      const leftovers = document.querySelector('[data-testid="meal-day-0-leftovers"]');
+      const notes = document.querySelector('[data-testid="meal-day-0-notes"]');
+      return leftovers instanceof HTMLTextAreaElement
+        && notes instanceof HTMLTextAreaElement
+        && leftovers.value === 'E2E leftover dal'
+        && notes.value === 'E2E less spice for kids';
+    },
     { timeout: uiTimeoutMs },
   );
 
-  await clickExactText(page, 'button', 'Grocery List');
+  await clickByTestId(page, 'owner-tab-grocery');
   await waitForText(page, 'Tomatoes', uiTimeoutMs);
   await clickTableRowButton(page, 'Tomatoes', 'Mark Bought');
   await waitForText(page, 'Pantry status updated.', uiTimeoutMs);
   await waitForGroceryItemToDisappear(page, 'Tomatoes', uiTimeoutMs);
 
-  await clickExactText(page, 'button', 'Pantry & Logs');
+  await clickByTestId(page, 'owner-tab-pantry');
   await waitForText(page, 'Pantry Management', uiTimeoutMs);
   await fillByPlaceholder(page, 'Ingredient name (e.g., Jeera)', 'Jeera');
   await fillByPlaceholder(page, 'Default Size (e.g., 500g)', '500g');
@@ -395,32 +438,31 @@ async function runCookCoreFlow(page) {
   const repro = [
     'Open /?e2e-role=cook.',
     'Click "Sign in with Google".',
-    'Switch to English.',
+    'Use default cook language profile.',
     'Use Smart Assistant with the standard pantry update prompt.',
-    'Search Tomatoes, mark it Full, add a note for Atta, and verify the note is rendered.',
+    'Search tomatoes, mark it Full, add a note for atta, and verify the note is rendered.',
   ];
 
   await page.goto(`${baseUrl}/?e2e-role=cook`, { waitUntil: 'domcontentloaded' });
   await waitForText(page, 'Sign in with Google', uiTimeoutMs);
   await clickExactText(page, 'button', 'Sign in with Google');
   await waitForText(page, 'Cook View', uiTimeoutMs);
-  await clickExactText(page, 'button', 'View in English');
-  await waitForText(page, "Today's Menu", uiTimeoutMs);
-  await fillByPlaceholder(page, "Tell AI what's finished...", 'Tamatar aur atta khatam ho gaya hai, dhania 2 bunch chahiye');
-  await clickExactText(page, 'button', 'Update');
-  await waitForText(page, 'Updated successfully!', uiTimeoutMs);
+  await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
+  await fillByTestId(page, 'cook-ai-input', 'Tamatar aur atta khatam ho gaya hai, dhania 2 bunch chahiye');
+  await clickByTestId(page, 'cook-ai-submit');
+  await waitForAnyText(page, ['Updated successfully!', 'अपडेट हो गया!'], uiTimeoutMs);
   await waitForText(page, 'Dhania', uiTimeoutMs);
-  await waitForText(page, 'On List', uiTimeoutMs);
+  await waitForAnyText(page, ['On List', 'सूची में है'], uiTimeoutMs);
 
-  await fillByPlaceholder(page, 'Search ingredients...', 'Tomatoes');
+  await fillByTestId(page, 'cook-pantry-search', 'Tomatoes');
   await waitForText(page, 'Tomatoes', uiTimeoutMs);
   await setCookStatus(page, 'Tomatoes', 'Full');
-  await waitForText(page, 'Tomatoes ➔ Full', uiTimeoutMs);
+  await waitForAnyText(page, ['Tomatoes ➔ Full', 'टमाटर ➔ पूरा है', 'Tomatoes ➔ पूरा है'], uiTimeoutMs);
 
-  await fillByPlaceholder(page, 'Search ingredients...', 'Atta');
+  await fillByTestId(page, 'cook-pantry-search', 'Atta');
   await waitForText(page, 'Atta', uiTimeoutMs);
   await setCookNote(page, 'Atta', '3kg');
-  await waitForText(page, 'Note: 3kg', uiTimeoutMs);
+  await waitForAnyText(page, ['Note: 3kg', 'नोट: 3kg'], uiTimeoutMs);
 
   return {
     name: 'cook-ai-journey',
@@ -433,7 +475,7 @@ async function runMalformedAiResponseCheck(page) {
   const repro = [
     'Open /?e2e-role=cook.',
     'Click "Sign in with Google".',
-    'Switch to English.',
+    'Use default cook language profile.',
     'Submit the malformed AI marker prompt.',
     'Verify the safe AI error message is rendered and the page stays usable.',
   ];
@@ -442,10 +484,9 @@ async function runMalformedAiResponseCheck(page) {
   await waitForText(page, 'Sign in with Google', uiTimeoutMs);
   await clickExactText(page, 'button', 'Sign in with Google');
   await waitForText(page, 'Cook View', uiTimeoutMs);
-  await clickExactText(page, 'button', 'View in English');
-  await waitForText(page, 'Today\'s Menu', uiTimeoutMs);
-  await fillByPlaceholder(page, "Tell AI what's finished...", '__e2e_malformed_ai__');
-  await clickExactText(page, 'button', 'Update');
+  await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
+  await fillByTestId(page, 'cook-ai-input', '__e2e_malformed_ai__');
+  await clickByTestId(page, 'cook-ai-submit');
   await waitForAnyText(
     page,
     [
@@ -466,7 +507,7 @@ async function runUnmatchedItemWarningCheck(page) {
   const repro = [
     'Open /?e2e-role=cook.',
     'Click "Sign in with Google".',
-    'Switch to English.',
+    'Use default cook language profile.',
     'Submit the unmatched item marker prompt.',
     'Verify the successful update path runs and Milk moves onto the list.',
   ];
@@ -475,14 +516,13 @@ async function runUnmatchedItemWarningCheck(page) {
   await waitForText(page, 'Sign in with Google', uiTimeoutMs);
   await clickExactText(page, 'button', 'Sign in with Google');
   await waitForText(page, 'Cook View', uiTimeoutMs);
-  await clickExactText(page, 'button', 'View in English');
-  await waitForText(page, "Today's Menu", uiTimeoutMs);
-  await fillByPlaceholder(page, "Tell AI what's finished...", '__e2e_unmatched_item__');
-  await clickExactText(page, 'button', 'Update');
-  await waitForText(page, 'Updated successfully!', uiTimeoutMs);
-  await fillByPlaceholder(page, 'Search ingredients...', 'Milk');
+  await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
+  await fillByTestId(page, 'cook-ai-input', '__e2e_unmatched_item__');
+  await clickByTestId(page, 'cook-ai-submit');
+  await waitForAnyText(page, ['Updated successfully!', 'अपडेट हो गया!'], uiTimeoutMs);
+  await fillByTestId(page, 'cook-pantry-search', 'Milk');
   await waitForText(page, 'Milk', uiTimeoutMs);
-  await waitForText(page, 'On List', uiTimeoutMs);
+  await waitForAnyText(page, ['On List', 'सूची में है'], uiTimeoutMs);
 
   return {
     name: 'ai-unmatched-item-warning',
@@ -495,7 +535,7 @@ async function runNoteSavePathCheck(page) {
   const repro = [
     'Open /?e2e-role=cook.',
     'Click "Sign in with Google".',
-    'Switch to English.',
+    'Use default cook language profile.',
     'Search for Atta.',
     'Add a note and save it.',
     'Verify the note renders as saved quantity text.',
@@ -505,12 +545,11 @@ async function runNoteSavePathCheck(page) {
   await waitForText(page, 'Sign in with Google', uiTimeoutMs);
   await clickExactText(page, 'button', 'Sign in with Google');
   await waitForText(page, 'Cook View', uiTimeoutMs);
-  await clickExactText(page, 'button', 'View in English');
-  await waitForText(page, "Today's Menu", uiTimeoutMs);
-  await fillByPlaceholder(page, 'Search ingredients...', 'Atta');
+  await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
+  await fillByTestId(page, 'cook-pantry-search', 'Atta');
   await waitForText(page, 'Atta', uiTimeoutMs);
   await setCookNote(page, 'Atta', '4kg');
-  await waitForText(page, 'Note: 4kg', uiTimeoutMs);
+  await waitForAnyText(page, ['Note: 4kg', 'नोट: 4kg'], uiTimeoutMs);
 
   return {
     name: 'note-save-path',
@@ -532,7 +571,7 @@ async function runRemoveFromGroceryPathCheck(page) {
   await waitForText(page, 'Sign in with Google', uiTimeoutMs);
   await clickExactText(page, 'button', 'Sign in with Google');
   await waitForText(page, 'Owner View', uiTimeoutMs);
-  await clickExactText(page, 'button', 'Grocery List');
+  await clickByTestId(page, 'owner-tab-grocery');
   await waitForText(page, 'Tomatoes', uiTimeoutMs);
   await clickTableRowButton(page, 'Tomatoes', 'Mark Bought');
   await waitForText(page, 'Pantry status updated.', uiTimeoutMs);
@@ -584,9 +623,9 @@ const scenarios = [
     repro: [
       'Open /?e2e-role=cook.',
       'Click "Sign in with Google".',
-      'Switch to English.',
+      'Use default cook language profile.',
       'Use Smart Assistant with the standard pantry update prompt.',
-      'Search Tomatoes, mark it Full, add a note for Atta, and verify the note is rendered.',
+      'Search tomatoes, mark it Full, add a note for atta, and verify the note is rendered.',
     ],
     run: runCookCoreFlow,
   },
@@ -595,7 +634,7 @@ const scenarios = [
     repro: [
       'Open /?e2e-role=cook.',
       'Click "Sign in with Google".',
-      'Switch to English.',
+      'Use default cook language profile.',
       'Submit the malformed AI marker prompt.',
       'Verify the safe AI error message is rendered and the page stays usable.',
     ],
@@ -606,7 +645,7 @@ const scenarios = [
     repro: [
       'Open /?e2e-role=cook.',
       'Click "Sign in with Google".',
-      'Switch to English.',
+      'Use default cook language profile.',
       'Submit the unmatched item marker prompt.',
       'Verify the successful update path runs and Milk moves onto the list.',
     ],
@@ -617,7 +656,7 @@ const scenarios = [
     repro: [
       'Open /?e2e-role=cook.',
       'Click "Sign in with Google".',
-      'Switch to English.',
+      'Use default cook language profile.',
       'Search for Atta.',
       'Add a note and save it.',
       'Verify the note renders as saved quantity text.',
