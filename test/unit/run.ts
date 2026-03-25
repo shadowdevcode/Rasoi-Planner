@@ -429,6 +429,43 @@ function testUnknownQueueErrorParsingAndMessaging(): void {
       userMessage: 'Review queue is temporarily unavailable.',
     },
   );
+
+  const userFacingMessages = [
+    getUnknownQueueLoadErrorMessage(permissionDenied, 'owner'),
+    getUnknownQueueLoadErrorMessage(permissionDenied, 'non-member'),
+    getUnknownQueueLoadErrorMessage(failedPrecondition, 'owner'),
+    getUnknownQueueLoadErrorMessage(unknownError, null),
+    classifyUnknownQueueLoadFailure({
+      error: permissionDenied,
+      membershipProbeResult: 'owner',
+      plainReadProbeResult: 'permission-denied',
+    }).userMessage,
+    classifyUnknownQueueLoadFailure({
+      error: permissionDenied,
+      membershipProbeResult: 'owner',
+      plainReadProbeResult: 'succeeded',
+    }).userMessage,
+    classifyUnknownQueueLoadFailure({
+      error: permissionDenied,
+      membershipProbeResult: 'non-member',
+      plainReadProbeResult: 'not-run',
+    }).userMessage,
+    classifyUnknownQueueLoadFailure({
+      error: failedPrecondition,
+      membershipProbeResult: 'owner',
+      plainReadProbeResult: 'not-run',
+    }).userMessage,
+    classifyUnknownQueueLoadFailure({
+      error: unknownError,
+      membershipProbeResult: null,
+      plainReadProbeResult: 'failed',
+    }).userMessage,
+  ];
+
+  for (const message of userFacingMessages) {
+    assert.equal(message.includes('[build:'), false);
+    assert.equal(message.includes('Build '), false);
+  }
 }
 
 function testUnknownQueueFallbackSortOrder(): void {
