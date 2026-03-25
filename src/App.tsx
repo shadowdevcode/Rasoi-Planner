@@ -4,6 +4,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -27,8 +28,12 @@ import {
 import { upsertMealField } from './services/mealService';
 import { HouseholdData, resolveOrCreateHousehold } from './services/householdService';
 import { getAppCopy } from './i18n/copy';
+import firebaseConfig from '../firebase-applet-config.json';
 import {
+  buildUnknownQueueTargetFingerprint,
+  classifyHouseholdMembershipProbe,
   getUnknownQueueLoadErrorMessage,
+  HouseholdMembershipProbeResult,
   isFirestoreFailedPreconditionError,
   sortUnknownIngredientQueueItemsByCreatedAt,
   toFirestoreListenerErrorInfo,
@@ -200,6 +205,36 @@ export default function App() {
           markInitialViewReady();
         };
 
+        const unknownQueuePath = `households/${resolved.householdId}/unknownIngredientQueue`;
+        const targetFingerprint = buildUnknownQueueTargetFingerprint({
+          projectId: firebaseConfig.projectId,
+          databaseId: firebaseConfig.firestoreDatabaseId,
+          householdId: resolved.householdId,
+        });
+
+        const membershipProbeSnapshot = await getDoc(doc(db, 'households', resolved.householdId));
+        const membershipProbeData = membershipProbeSnapshot.exists()
+          ? (membershipProbeSnapshot.data() as HouseholdData)
+          : null;
+        const membershipProbeResult: HouseholdMembershipProbeResult = classifyHouseholdMembershipProbe({
+          householdExists: membershipProbeSnapshot.exists(),
+          householdOwnerId: membershipProbeData?.ownerId ?? null,
+          householdCookEmail: membershipProbeData?.cookEmail ?? null,
+          userUid: user.uid,
+          userEmail: user.email ?? null,
+        });
+
+        console.info('unknown_queue_runtime_target', {
+          projectId: firebaseConfig.projectId,
+          databaseId: firebaseConfig.firestoreDatabaseId,
+          householdId: resolved.householdId,
+          uid: user.uid,
+          email: user.email ?? null,
+          path: unknownQueuePath,
+          targetFingerprint,
+          membershipProbeResult,
+        });
+
         const subscribeUnknownQueueFallback = (): void => {
           if (unknownQueueFallbackUnsub !== null) {
             return;
@@ -221,8 +256,15 @@ export default function App() {
                 householdId: resolved.householdId,
                 code: parsedError.code,
                 message: parsedError.message,
+                projectId: firebaseConfig.projectId,
+                databaseId: firebaseConfig.firestoreDatabaseId,
+                uid: user.uid,
+                email: user.email ?? null,
+                path: unknownQueuePath,
+                targetFingerprint,
+                membershipProbeResult,
               });
-              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError) });
+              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult) });
               hasLoadedUnknownQueue = true;
               markInitialViewReady();
             },
@@ -245,6 +287,13 @@ export default function App() {
               householdId: resolved.householdId,
               code: parsedError.code,
               message: parsedError.message,
+              projectId: firebaseConfig.projectId,
+              databaseId: firebaseConfig.firestoreDatabaseId,
+              uid: user.uid,
+              email: user.email ?? null,
+              path: unknownQueuePath,
+              targetFingerprint,
+              membershipProbeResult,
             });
 
             if (isFirestoreFailedPreconditionError(parsedError)) {
@@ -252,12 +301,12 @@ export default function App() {
                 unknownQueueUnsub();
                 unknownQueueUnsub = null;
               }
-              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError) });
+              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult) });
               subscribeUnknownQueueFallback();
               return;
             }
 
-            setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError) });
+            setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult) });
             hasLoadedUnknownQueue = true;
             markInitialViewReady();
           },

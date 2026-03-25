@@ -6,6 +6,22 @@ export interface FirestoreListenerErrorInfo {
   name: string | null;
 }
 
+export interface UnknownQueueTargetFingerprintInput {
+  databaseId: string;
+  householdId: string;
+  projectId: string;
+}
+
+export interface HouseholdMembershipProbeInput {
+  householdCookEmail: string | null;
+  householdExists: boolean;
+  householdOwnerId: string | null;
+  userEmail: string | null;
+  userUid: string;
+}
+
+export type HouseholdMembershipProbeResult = 'owner' | 'cook' | 'non-member' | 'household-missing';
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== 'object' || value === null) {
     return null;
@@ -39,9 +55,41 @@ export function isFirestorePermissionDeniedError(error: FirestoreListenerErrorIn
   return error.code === 'permission-denied';
 }
 
-export function getUnknownQueueLoadErrorMessage(error: FirestoreListenerErrorInfo): string {
+function normalizeEmail(value: string | null): string {
+  return value === null ? '' : value.trim().toLowerCase();
+}
+
+export function classifyHouseholdMembershipProbe(input: HouseholdMembershipProbeInput): HouseholdMembershipProbeResult {
+  if (!input.householdExists) {
+    return 'household-missing';
+  }
+
+  if (input.householdOwnerId === input.userUid) {
+    return 'owner';
+  }
+
+  const normalizedCookEmail = normalizeEmail(input.householdCookEmail);
+  const normalizedUserEmail = normalizeEmail(input.userEmail);
+  if (normalizedCookEmail.length > 0 && normalizedCookEmail === normalizedUserEmail) {
+    return 'cook';
+  }
+
+  return 'non-member';
+}
+
+export function buildUnknownQueueTargetFingerprint(input: UnknownQueueTargetFingerprintInput): string {
+  return `${input.projectId}/${input.databaseId}/households/${input.householdId}/unknownIngredientQueue`;
+}
+
+export function getUnknownQueueLoadErrorMessage(
+  error: FirestoreListenerErrorInfo,
+  membershipProbeResult: HouseholdMembershipProbeResult | null,
+): string {
   if (isFirestorePermissionDeniedError(error)) {
-    return 'Unknown ingredient queue access denied. Deploy latest Firestore rules and retry.';
+    if (membershipProbeResult === 'non-member' || membershipProbeResult === 'household-missing') {
+      return 'Unknown ingredient queue access denied. Household membership mismatch suspected.';
+    }
+    return 'Unknown ingredient queue access denied. Firestore target mismatch suspected. Verify project/database rules deployment.';
   }
 
   if (isFirestoreFailedPreconditionError(error)) {

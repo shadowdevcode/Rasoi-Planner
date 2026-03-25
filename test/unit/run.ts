@@ -5,6 +5,8 @@ import { buildPantryLog } from '../../src/services/logService';
 import { sanitizeFirestorePayload } from '../../src/utils/firestorePayload';
 import { getIngredientNativeContextLabel, resolveIngredientVisual } from '../../src/utils/ingredientVisuals';
 import {
+  buildUnknownQueueTargetFingerprint,
+  classifyHouseholdMembershipProbe,
   getUnknownQueueLoadErrorMessage,
   isFirestoreFailedPreconditionError,
   isFirestorePermissionDeniedError,
@@ -347,7 +349,14 @@ function testUnknownQueueErrorParsingAndMessaging(): void {
     name: 'FirebaseError',
   });
   assert.equal(isFirestorePermissionDeniedError(permissionDenied), true);
-  assert.equal(getUnknownQueueLoadErrorMessage(permissionDenied), 'Unknown ingredient queue access denied. Deploy latest Firestore rules and retry.');
+  assert.equal(
+    getUnknownQueueLoadErrorMessage(permissionDenied, 'owner'),
+    'Unknown ingredient queue access denied. Firestore target mismatch suspected. Verify project/database rules deployment.',
+  );
+  assert.equal(
+    getUnknownQueueLoadErrorMessage(permissionDenied, 'non-member'),
+    'Unknown ingredient queue access denied. Household membership mismatch suspected.',
+  );
 
   const failedPrecondition = toFirestoreListenerErrorInfo({
     code: 'failed-precondition',
@@ -355,12 +364,15 @@ function testUnknownQueueErrorParsingAndMessaging(): void {
     name: 'FirebaseError',
   });
   assert.equal(isFirestoreFailedPreconditionError(failedPrecondition), true);
-  assert.equal(getUnknownQueueLoadErrorMessage(failedPrecondition), 'Unknown ingredient queue index is missing. Showing fallback order while index is provisioned.');
+  assert.equal(
+    getUnknownQueueLoadErrorMessage(failedPrecondition, 'owner'),
+    'Unknown ingredient queue index is missing. Showing fallback order while index is provisioned.',
+  );
 
   const unknownError = toFirestoreListenerErrorInfo(new Error('boom'));
   assert.equal(isFirestoreFailedPreconditionError(unknownError), false);
   assert.equal(isFirestorePermissionDeniedError(unknownError), false);
-  assert.equal(getUnknownQueueLoadErrorMessage(unknownError), 'Failed to load unknown ingredient queue.');
+  assert.equal(getUnknownQueueLoadErrorMessage(unknownError, null), 'Failed to load unknown ingredient queue.');
 }
 
 function testUnknownQueueFallbackSortOrder(): void {
@@ -397,6 +409,56 @@ function testUnknownQueueFallbackSortOrder(): void {
   assert.deepEqual(sorted.map((item) => item.id), ['queue-1', 'queue-2', 'queue-3']);
 }
 
+function testUnknownQueueTargetFingerprintAndMembershipProbe(): void {
+  const fingerprint = buildUnknownQueueTargetFingerprint({
+    projectId: 'project-x',
+    databaseId: 'db-y',
+    householdId: 'house-z',
+  });
+  assert.equal(fingerprint, 'project-x/db-y/households/house-z/unknownIngredientQueue');
+
+  assert.equal(
+    classifyHouseholdMembershipProbe({
+      householdExists: true,
+      householdOwnerId: 'owner-1',
+      householdCookEmail: 'cook@example.com',
+      userUid: 'owner-1',
+      userEmail: 'owner@example.com',
+    }),
+    'owner',
+  );
+  assert.equal(
+    classifyHouseholdMembershipProbe({
+      householdExists: true,
+      householdOwnerId: 'owner-1',
+      householdCookEmail: 'cook@example.com',
+      userUid: 'cook-uid',
+      userEmail: 'cook@example.com',
+    }),
+    'cook',
+  );
+  assert.equal(
+    classifyHouseholdMembershipProbe({
+      householdExists: true,
+      householdOwnerId: 'owner-1',
+      householdCookEmail: 'cook@example.com',
+      userUid: 'intruder',
+      userEmail: 'intruder@example.com',
+    }),
+    'non-member',
+  );
+  assert.equal(
+    classifyHouseholdMembershipProbe({
+      householdExists: false,
+      householdOwnerId: null,
+      householdCookEmail: null,
+      userUid: 'owner-1',
+      userEmail: 'owner@example.com',
+    }),
+    'household-missing',
+  );
+}
+
 function run(): void {
   testPantryCategoryNormalization();
   testPantryCategoryLabels();
@@ -419,6 +481,7 @@ function run(): void {
   testIngredientVisualCategoryFallback();
   testUnknownQueueErrorParsingAndMessaging();
   testUnknownQueueFallbackSortOrder();
+  testUnknownQueueTargetFingerprintAndMembershipProbe();
   console.log('All unit tests passed.');
 }
 

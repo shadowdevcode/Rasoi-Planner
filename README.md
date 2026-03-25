@@ -212,12 +212,14 @@ These constraints are enforced in `firestore.rules` and validated by `test/rules
 ### Production Firestore Rules Runbook
 1. Authenticate Firebase CLI:
    - `npx firebase login`
-2. Deploy production Firestore rules:
+2. Verify project/database deploy targets:
+   - `npm run rules:target:check`
+3. Deploy production Firestore rules:
    - `npm run rules:deploy:prod`
-3. Validate production owner view:
+4. Validate production owner view:
    - Sign in as owner and open the pantry/unknown queue section.
    - Confirm no `Unknown ingredient queue access denied` banner appears.
-4. Optional deploy diagnostics:
+5. Optional deploy diagnostics:
    - `npm run rules:deploy:prod:dry`
 
 ## GitHub-Vercel Sync Workflow

@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "unit:test": "node --import tsx test/unit/run.ts",
     "rules:test": "node test/rules/check-java.mjs && firebase emulators:exec --only firestore --project demo-rasoi-planner \"tsx test/rules/run.ts\"",
+    "rules:target:check": "node scripts/print-firestore-rules-target.mjs",
     "rules:deploy:prod": "npx firebase deploy --only firestore:rules --project gen-lang-client-0862152879",
     "rules:deploy:prod:dry": "npx firebase deploy --only firestore:rules --project gen-lang-client-0862152879 --debug",
     "e2e": "node test/e2e/run.mjs",
