@@ -13,7 +13,7 @@ import {
 import OwnerView from './components/OwnerView';
 import CookView from './components/CookView';
 import { auth, db, loginWithGoogle, logout } from './firebase';
-import { InventoryItem, InventoryStatus, MealPlan, PantryLog, Role } from './types';
+import { InventoryItem, InventoryStatus, MealPlan, PantryLog, Role, UiLanguage } from './types';
 import { toUserFacingError } from './utils/error';
 import {
   addInventoryItem,
@@ -24,6 +24,7 @@ import {
 } from './services/inventoryService';
 import { upsertMealField } from './services/mealService';
 import { HouseholdData, resolveOrCreateHousehold } from './services/householdService';
+import { getAppCopy } from './i18n/copy';
 
 interface UiFeedback {
   kind: 'success' | 'error';
@@ -47,6 +48,10 @@ export default function App() {
   const [isInviting, setIsInviting] = useState(false);
   const [uiFeedback, setUiFeedback] = useState<UiFeedback | null>(null);
   const isOwner = role === 'owner';
+  const ownerLanguage: UiLanguage = householdData?.ownerLanguage ?? 'en';
+  const cookLanguage: UiLanguage = householdData?.cookLanguage ?? 'hi';
+  const activeLanguage: UiLanguage = isOwner ? ownerLanguage : cookLanguage;
+  const appCopy = getAppCopy(activeLanguage);
   const shellWidthClass = isOwner ? 'max-w-7xl' : 'max-w-5xl';
   const shellSectionClass = `${shellWidthClass} mx-auto px-4 md:px-6`;
   const shellMainClass = `${shellWidthClass} mx-auto p-4 md:p-6 pb-24`;
@@ -331,6 +336,22 @@ export default function App() {
     }
   };
 
+  const handleUpdateLanguagePreference = async (field: 'ownerLanguage' | 'cookLanguage', value: UiLanguage): Promise<void> => {
+    if (!householdId) {
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'households', householdId), {
+        [field]: value,
+      });
+      setUiFeedback({ kind: 'success', message: 'Language profile updated.' });
+    } catch (error) {
+      console.error('language_profile_update_failed', { error, householdId, field, value });
+      setUiFeedback({ kind: 'error', message: toUserFacingError(error, 'Failed to update language profile.') });
+    }
+  };
+
   const handleRemoveCook = async (): Promise<void> => {
     if (!householdId) {
       return;
@@ -370,13 +391,14 @@ export default function App() {
             </div>
           </div>
           <h1 className="text-3xl font-bold text-stone-800 mb-2">Rasoi Planner</h1>
-          <p className="text-stone-500 mb-8">Sign in to sync your pantry and meal plans across all devices.</p>
+          <p className="text-stone-500 mb-8">{appCopy.signInPrompt}</p>
           <button
             onClick={loginWithGoogle}
             className="w-full bg-orange-600 text-white py-3 px-4 rounded-xl font-bold hover:bg-orange-700 transition-colors flex items-center justify-center gap-2"
+            data-testid="sign-in-button"
           >
             <LogIn size={20} />
-            Sign in with Google
+            {appCopy.signInWithGoogle}
           </button>
         </div>
       </div>
@@ -388,13 +410,13 @@ export default function App() {
       <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-red-100 max-w-md w-full text-center">
           <AlertCircle className="mx-auto text-red-500 mb-4" size={40} />
-          <h1 className="text-2xl font-bold text-stone-800 mb-2">Access Removed</h1>
-          <p className="text-stone-500 mb-6">Your owner removed this cook access. Sign out and ask the owner to invite you again.</p>
+          <h1 className="text-2xl font-bold text-stone-800 mb-2">{appCopy.accessRemoved}</h1>
+          <p className="text-stone-500 mb-6">{appCopy.accessRemovedDetail}</p>
           <button
             onClick={logout}
             className="w-full bg-stone-800 text-white py-3 px-4 rounded-xl font-bold hover:bg-stone-700 transition-colors"
           >
-            Sign Out
+            {appCopy.signOut}
           </button>
         </div>
       </div>
@@ -413,20 +435,20 @@ export default function App() {
               <div className="min-w-0">
                 <h1 className="hidden text-2xl font-bold tracking-tight sm:block">Rasoi Planner</h1>
                 <p className="text-xs font-medium uppercase tracking-[0.24em] text-orange-100/80">
-                  {isOwner ? 'Owner workspace' : 'Cook workspace'}
+                  {isOwner ? appCopy.ownerWorkspace : appCopy.cookWorkspace}
                 </p>
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 sm:justify-end">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm font-semibold text-white shadow-inner">
                 {isOwner ? <User size={16} /> : <ChefHat size={16} />}
-                <span>{isOwner ? 'Owner' : 'Cook'}</span>
+                <span>{isOwner ? appCopy.ownerRole : appCopy.cookRole}</span>
               </div>
               <button
                 onClick={logout}
                 className="text-sm font-medium text-orange-50 transition-colors hover:text-white"
               >
-                Sign Out
+                {appCopy.signOut}
               </button>
             </div>
           </div>
@@ -452,12 +474,40 @@ export default function App() {
         <div className={`${shellSectionClass} pt-6`}>
           <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h3 className="font-bold text-stone-800">Household Settings</h3>
+              <h3 className="font-bold text-stone-800">{appCopy.householdSettings}</h3>
               <p className="text-sm text-stone-500">
                 {householdData.cookEmail
                   ? `Cook access granted to: ${householdData.cookEmail}`
-                  : 'Invite your cook to sync the pantry.'}
+                  : appCopy.inviteCookHint}
               </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">{appCopy.ownerLanguageLabel}</span>
+                  <select
+                    value={ownerLanguage}
+                    onChange={(event) => void handleUpdateLanguagePreference('ownerLanguage', event.target.value as UiLanguage)}
+                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                    data-testid="owner-language-select"
+                  >
+                    <option value="en">English + Hinglish helper</option>
+                    <option value="hi">Hindi + Hinglish helper</option>
+                  </select>
+                  <span className="text-xs text-stone-500">{appCopy.ownerLanguageHint}</span>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">{appCopy.cookLanguageLabel}</span>
+                  <select
+                    value={cookLanguage}
+                    onChange={(event) => void handleUpdateLanguagePreference('cookLanguage', event.target.value as UiLanguage)}
+                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                    data-testid="cook-language-select"
+                  >
+                    <option value="hi">Hindi + Hinglish helper</option>
+                    <option value="en">English + Hinglish helper</option>
+                  </select>
+                  <span className="text-xs text-stone-500">{appCopy.cookLanguageHint}</span>
+                </label>
+              </div>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               {householdData.cookEmail ? (
@@ -465,13 +515,13 @@ export default function App() {
                   onClick={handleRemoveCook}
                   className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-bold hover:bg-red-100 transition-colors whitespace-nowrap"
                 >
-                  Remove Cook
+                  {appCopy.removeCook}
                 </button>
               ) : (
                 <div className="flex w-full sm:w-auto gap-2">
                   <input
                     type="email"
-                    placeholder="Cook's Gmail address"
+                    placeholder={appCopy.inviteCookPlaceholder}
                     value={inviteEmail}
                     onChange={(event) => setInviteEmail(event.target.value)}
                     className="px-3 py-2 border border-stone-300 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-orange-500 outline-none"
@@ -481,7 +531,7 @@ export default function App() {
                     disabled={isInviting || !inviteEmail}
                     className="px-4 py-2 bg-stone-800 text-white rounded-lg text-sm font-bold hover:bg-stone-700 transition-colors disabled:opacity-50 whitespace-nowrap"
                   >
-                    {isInviting ? 'Inviting...' : 'Invite'}
+                    {isInviting ? appCopy.inviting : appCopy.invite}
                   </button>
                 </div>
               )}
@@ -505,6 +555,7 @@ export default function App() {
             onDeleteInventoryItem={handleDeleteInventoryItem}
             onClearAnomaly={handleClearAnomaly}
             logs={logs}
+            language={ownerLanguage}
           />
         ) : (
           <CookView
@@ -512,6 +563,7 @@ export default function App() {
             inventory={inventory}
             onUpdateInventory={handleUpdateInventory}
             onAddUnlistedItem={handleAddUnlistedItem}
+            language={cookLanguage}
           />
         )}
       </main>

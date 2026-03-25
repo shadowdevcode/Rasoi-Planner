@@ -78,6 +78,8 @@ async function seedOwnerHousehold(testEnv: RulesTestEnvironment, cookEmailValue:
     await setDoc(doc(adminDb, 'households', householdId), {
       ownerId: ownerUid,
       cookEmail: cookEmailValue.toLowerCase(),
+      ownerLanguage: 'en',
+      cookLanguage: 'hi',
     });
   });
 }
@@ -152,6 +154,24 @@ async function testNonOwnerCannotUpdateOrDeleteOwnerHousehold(testEnv: RulesTest
     }),
   );
   await assertFails(deleteDoc(doc(intruderDb, 'households', householdId)));
+}
+
+async function testOwnerCanUpdateLanguageProfilesWithValidValues(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  const ownerDb = getAuthenticatedDb(testEnv, ownerUid, ownerEmail);
+
+  await assertSucceeds(
+    updateDoc(doc(ownerDb, 'households', householdId), {
+      ownerLanguage: 'hi',
+      cookLanguage: 'en',
+    }),
+  );
+
+  await assertFails(
+    updateDoc(doc(ownerDb, 'households', householdId), {
+      ownerLanguage: 'hinglish',
+    }),
+  );
 }
 
 async function testInvitedCookCanReadHouseholdInventoryAndLogs(testEnv: RulesTestEnvironment): Promise<void> {
@@ -267,6 +287,10 @@ async function runAllTests(testEnv: RulesTestEnvironment): Promise<void> {
     {
       name: 'Non-owner cannot update/delete owner household',
       run: testNonOwnerCannotUpdateOrDeleteOwnerHousehold,
+    },
+    {
+      name: 'Owner can update language profiles only with supported values',
+      run: testOwnerCanUpdateLanguageProfilesWithValidValues,
     },
     {
       name: 'Invited cook can read household, inventory, and logs',

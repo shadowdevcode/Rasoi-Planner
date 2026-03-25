@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShoppingCart, CheckCircle2 } from 'lucide-react';
 import { InventoryItem, InventoryStatus } from '../types';
+import { getPantryCategoryLabel } from '../utils/pantryCategory';
 
 interface Props {
   inventory: InventoryItem[];
@@ -62,13 +63,14 @@ export default function GroceryList({ inventory, onUpdateInventory }: Props) {
                       )}
                     </div>
                     <p className="text-sm text-stone-500">
-                      {item.category} • {item.status === 'out' ? 'Finished' : 'Running Low'}
+                      {getPantryCategoryLabel(item.category)} • {item.status === 'out' ? 'Finished' : 'Running Low'}
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => onUpdateInventory(item.id, 'in-stock')}
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-100 px-4 py-2.5 font-medium text-emerald-700 transition-colors hover:bg-emerald-200 sm:w-auto"
+                  data-testid={`grocery-mark-bought-${item.id}`}
                 >
                   <CheckCircle2 size={18} />
                   Mark Bought

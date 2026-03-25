@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { Sun, Moon, AlertCircle, CheckCircle2, Search, Mic, Globe, Info, ShoppingCart, MessageSquarePlus, Check } from 'lucide-react';
-import { MealPlan, InventoryItem, InventoryStatus, Language } from '../types';
+import { Sun, Moon, AlertCircle, CheckCircle2, Search, Mic, Info, ShoppingCart, MessageSquarePlus, Check } from 'lucide-react';
+import { MealPlan, InventoryItem, InventoryStatus, UiLanguage } from '../types';
 import { parseCookVoiceInput } from '../services/ai';
 import { getLocalDateKey } from '../utils/date';
+import { getCookCopy } from '../i18n/copy';
 
 interface Props {
   meals: Record<string, MealPlan>;
   inventory: InventoryItem[];
   onUpdateInventory: (id: string, status: InventoryStatus, requestedQuantity?: string) => void;
   onAddUnlistedItem: (name: string, status: InventoryStatus, category: string, requestedQuantity?: string) => void;
+  language: UiLanguage;
 }
 
 const DICT = {
@@ -56,8 +58,7 @@ const DICT = {
   }
 };
 
-export default function CookView({ meals, inventory, onUpdateInventory, onAddUnlistedItem }: Props) {
-  const [lang, setLang] = useState<Language>('hi');
+export default function CookView({ meals, inventory, onUpdateInventory, onAddUnlistedItem, language }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [aiInput, setAiInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -66,7 +67,9 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteValue, setNoteValue] = useState('');
 
+  const lang = language;
   const t = DICT[lang];
+  const copy = getCookCopy(lang);
   const today = getLocalDateKey(new Date());
   const todaysMeals = meals[today] || { morning: t.notPlanned, evening: t.notPlanned, notes: undefined, leftovers: undefined };
 
@@ -157,16 +160,12 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="max-w-2xl space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">
-              {lang === 'hi' ? 'कुक वर्कस्पेस' : 'Cook workspace'}
+              {copy.workspaceTag}
             </p>
             <h2 className="text-2xl font-semibold tracking-tight text-stone-900 sm:text-3xl">
-              {lang === 'hi' ? 'आज का मेनू और पेंट्री स्थिति' : t.todayMenu}
+              {copy.title}
             </h2>
-            <p className="text-sm leading-6 text-stone-500">
-              {lang === 'hi'
-                ? 'मेनू, स्मार्ट अपडेट, और पेंट्री चेक एक ही साफ़-सुथरे सतह पर।'
-                : 'Keep menu review, AI updates, and pantry checks on one calm surface.'}
-            </p>
+            <p className="text-sm leading-6 text-stone-500">{copy.helper}</p>
           </div>
           <div className="inline-flex rounded-full border border-stone-200 bg-stone-50 p-1 shadow-sm">
             <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-stone-500">
@@ -174,13 +173,9 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
               Cook View
             </span>
           </div>
-          <button
-            onClick={() => setLang(lang === 'en' ? 'hi' : 'en')}
-            className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm transition-colors hover:bg-stone-50"
-          >
-            <Globe size={16} className="text-orange-600" />
-            {lang === 'en' ? 'हिंदी में देखें' : 'View in English'}
-          </button>
+          <span className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-700 shadow-sm">
+            {copy.switchLabel}: {lang === 'hi' ? 'Hindi + Hinglish' : 'English + Hinglish'}
+          </span>
         </div>
       </section>
 
@@ -190,10 +185,8 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
             <Mic size={20} />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-stone-900">Smart Assistant</h3>
-            <p className="text-sm text-stone-500">
-              {lang === 'hi' ? 'त्वरित स्टेटस अपडेट और अनलिस्टेड आइटम जोड़ें।' : 'Quick status updates and unlisted item requests.'}
-            </p>
+            <h3 className="text-lg font-semibold text-stone-900">{copy.smartAssistant}</h3>
+            <p className="text-sm text-stone-500">{copy.smartAssistantHelper}</p>
           </div>
         </div>
         <div className="rounded-[28px] border border-stone-200 bg-gradient-to-br from-orange-500 to-orange-600 p-5 text-white shadow-sm md:p-6">
@@ -203,20 +196,20 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
               placeholder={t.voicePrompt}
+              data-testid="cook-ai-input"
               className="min-w-0 flex-1 rounded-xl border border-white/20 bg-white px-4 py-3 text-stone-800 outline-none transition focus:ring-2 focus:ring-orange-200"
               disabled={isProcessing}
             />
             <button
               type="submit"
               disabled={isProcessing || !aiInput.trim()}
+              data-testid="cook-ai-submit"
               className="inline-flex items-center justify-center rounded-xl bg-stone-900 px-6 py-3 font-bold text-white transition-colors disabled:opacity-50 hover:bg-stone-800 sm:flex-none"
             >
               {isProcessing ? t.processing : t.voiceBtn}
             </button>
           </form>
-          <p className="mt-3 text-sm text-orange-100/90">
-            Tip: Type something like "Tamatar aur atta khatam ho gaya hai"
-          </p>
+          <p className="mt-3 text-sm text-orange-100/90">{copy.aiTip}</p>
           {errorMessage && (
             <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
               <div className="flex items-start gap-2">
@@ -305,6 +298,7 @@ export default function CookView({ meals, inventory, onUpdateInventory, onAddUnl
                 placeholder={t.search}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="cook-pantry-search"
                 className="w-full rounded-xl border border-stone-300 bg-white py-3 pl-10 pr-4 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
               />
             </div>

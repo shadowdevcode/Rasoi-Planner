@@ -1,3 +1,5 @@
+import { normalizePantryCategory } from '../../../src/utils/pantryCategory';
+
 interface InventoryPromptItem {
   id: string;
   name: string;
@@ -73,7 +75,7 @@ function findUnlistedItems(input: string) {
     unlistedItems.push({
       name: 'Dhania',
       status: guessStatus(input),
-      category: 'Veggies',
+      category: normalizePantryCategory('Veggies'),
       requestedQuantity,
     });
   }

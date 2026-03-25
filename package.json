@@ -10,9 +10,10 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "unit:test": "node --import tsx test/unit/run.ts",
     "rules:test": "node test/rules/check-java.mjs && firebase emulators:exec --only firestore --project demo-rasoi-planner \"tsx test/rules/run.ts\"",
     "e2e": "node test/e2e/run.mjs",
-    "verify:local": "npm run lint && npm run build && npm run rules:test && npm run e2e",
+    "verify:local": "npm run lint && npm run unit:test && npm run build && npm run rules:test && npm run e2e",
     "prepare": "husky"
   },
   "dependencies": {
