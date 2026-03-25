@@ -44,6 +44,25 @@ interface UiFeedback {
   message: string;
 }
 
+function resolveAppBuildId(): string {
+  const viteEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  const explicitBuildId = viteEnv?.VITE_BUILD_ID;
+  if (typeof explicitBuildId === 'string' && explicitBuildId.trim().length > 0) {
+    return explicitBuildId.trim();
+  }
+
+  const commitBuildId = viteEnv?.VITE_VERCEL_GIT_COMMIT_SHA;
+  if (typeof commitBuildId === 'string' && commitBuildId.trim().length > 0) {
+    return commitBuildId.trim();
+  }
+
+  return 'dev-local';
+}
+
+function appendBuildIdToDiagnosticMessage(message: string, buildId: string): string {
+  return `${message} [build:${buildId}]`;
+}
+
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -66,6 +85,7 @@ export default function App() {
   const cookLanguage: UiLanguage = householdData?.cookLanguage ?? 'hi';
   const activeLanguage: UiLanguage = isOwner ? ownerLanguage : cookLanguage;
   const appCopy = getAppCopy(activeLanguage);
+  const appBuildId = resolveAppBuildId();
   const shellWidthClass = isOwner ? 'max-w-7xl' : 'max-w-5xl';
   const shellSectionClass = `${shellWidthClass} mx-auto px-4 md:px-6`;
   const shellMainClass = `${shellWidthClass} mx-auto px-4 pb-24 pt-6 md:px-6`;
@@ -227,6 +247,7 @@ export default function App() {
         console.info('unknown_queue_runtime_target', {
           projectId: firebaseConfig.projectId,
           databaseId: firebaseConfig.firestoreDatabaseId,
+          buildId: appBuildId,
           householdId: resolved.householdId,
           uid: user.uid,
           email: user.email ?? null,
@@ -258,13 +279,20 @@ export default function App() {
                 message: parsedError.message,
                 projectId: firebaseConfig.projectId,
                 databaseId: firebaseConfig.firestoreDatabaseId,
+                buildId: appBuildId,
                 uid: user.uid,
                 email: user.email ?? null,
                 path: unknownQueuePath,
                 targetFingerprint,
                 membershipProbeResult,
               });
-              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult) });
+              setUiFeedback({
+                kind: 'error',
+                message: appendBuildIdToDiagnosticMessage(
+                  getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
+                  appBuildId,
+                ),
+              });
               hasLoadedUnknownQueue = true;
               markInitialViewReady();
             },
@@ -289,6 +317,7 @@ export default function App() {
               message: parsedError.message,
               projectId: firebaseConfig.projectId,
               databaseId: firebaseConfig.firestoreDatabaseId,
+              buildId: appBuildId,
               uid: user.uid,
               email: user.email ?? null,
               path: unknownQueuePath,
@@ -301,12 +330,24 @@ export default function App() {
                 unknownQueueUnsub();
                 unknownQueueUnsub = null;
               }
-              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult) });
+              setUiFeedback({
+                kind: 'error',
+                message: appendBuildIdToDiagnosticMessage(
+                  getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
+                  appBuildId,
+                ),
+              });
               subscribeUnknownQueueFallback();
               return;
             }
 
-            setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult) });
+            setUiFeedback({
+              kind: 'error',
+              message: appendBuildIdToDiagnosticMessage(
+                getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
+                appBuildId,
+              ),
+            });
             hasLoadedUnknownQueue = true;
             markInitialViewReady();
           },
@@ -340,7 +381,7 @@ export default function App() {
         unknownQueueFallbackUnsub();
       }
     };
-  }, [user]);
+  }, [user, appBuildId]);
 
   const handleUpdateInventory = async (id: string, newStatus: InventoryStatus, requestedQuantity?: string): Promise<void> => {
     if (!user || !householdId) {
@@ -614,6 +655,9 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 sm:justify-end">
+              <div className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-wide text-orange-50/90 sm:block">
+                Build {appBuildId}
+              </div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm font-semibold text-white shadow-inner">
                 {isOwner ? <User size={16} /> : <ChefHat size={16} />}
                 <span>{isOwner ? appCopy.ownerRole : appCopy.cookRole}</span>

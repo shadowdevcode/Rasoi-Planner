@@ -15,9 +15,10 @@
     "rules:target:check": "node scripts/print-firestore-rules-target.mjs",
     "rules:deploy:prod": "npx firebase deploy --only firestore:rules --project gen-lang-client-0862152879",
     "rules:deploy:prod:dry": "npx firebase deploy --only firestore:rules --project gen-lang-client-0862152879 --debug",
+    "rules:smoke:prod": "node scripts/smoke-firestore-unknown-queue.mjs",
     "e2e": "node test/e2e/run.mjs",
     "e2e:headed": "E2E_HEADLESS=false node test/e2e/run.mjs",
-    "verify:local": "npm run lint && npm run unit:test && npm run build && npm run rules:test && npm run e2e",
+    "verify:local": "npm run rules:target:check && npm run lint && npm run unit:test && npm run build && npm run rules:test && npm run e2e",
     "prepare": "husky"
   },
   "dependencies": {

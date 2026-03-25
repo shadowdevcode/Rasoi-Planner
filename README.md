@@ -210,15 +210,17 @@ These constraints are enforced in `firestore.rules` and validated by `test/rules
 - Confirm production Firebase Auth domain setup before release (Google provider and authorized domains)
 
 ### Production Firestore Rules Runbook
-1. Authenticate Firebase CLI:
-   - `npx firebase login`
-2. Verify project/database deploy targets:
-   - `npm run rules:target:check`
-3. Deploy production Firestore rules:
+1. Mainline path (default):
+   - Merge to `main`; CI deploys `firestore.rules` automatically when Firestore files change.
+2. CI deploy preconditions:
+   - `verify-local` must pass.
+   - `npm run rules:target:check` must pass (project/database target integrity gate).
+3. Post-deploy smoke checks:
+   - Owner smoke user must read `households/{householdId}/unknownIngredientQueue`.
+   - Non-member smoke user must receive `PERMISSION_DENIED`.
+4. Emergency/manual deploy only:
    - `npm run rules:deploy:prod`
-4. Validate production owner view:
-   - Sign in as owner and open the pantry/unknown queue section.
-   - Confirm no `Unknown ingredient queue access denied` banner appears.
+   - `npm run rules:smoke:prod`
 5. Optional deploy diagnostics:
    - `npm run rules:deploy:prod:dry`
 
@@ -243,6 +245,11 @@ This project uses GitHub as the deployment source of truth.
 - CI command chain:
   - `npm ci`
   - `npm run verify:local`
+  - `verify-local` includes `npm run rules:target:check`
+- `main` push additional automation:
+  - Detect Firestore-related file changes.
+  - Deploy Firestore rules automatically when changed.
+  - Run production smoke test for owner-allow and non-member-deny unknown queue reads.
 
 ### Local push gate (Husky)
 - Husky install hook is configured via `npm run prepare`.
@@ -255,6 +262,13 @@ This project uses GitHub as the deployment source of truth.
 - Require status checks to pass before merging.
 - Add required status check: `verify-local`.
 - Require branches to be up to date before merging.
+- Add repository secrets for Firestore deploy/smoke workflow:
+  - `FIREBASE_TOKEN`
+  - `SMOKE_OWNER_EMAIL`
+  - `SMOKE_OWNER_PASSWORD`
+  - `SMOKE_OWNER_HOUSEHOLD_ID`
+  - `SMOKE_NON_MEMBER_EMAIL`
+  - `SMOKE_NON_MEMBER_PASSWORD`
 
 ### Required Vercel settings
 - Git repository connected to this GitHub repo.
@@ -275,10 +289,12 @@ This project uses GitHub as the deployment source of truth.
 ### Firestore rules tests fail with Java/emulator error
 - Install Java 17+ and confirm `java -version` resolves correctly in shell.
 
-### `Unknown ingredient queue access denied. Deploy latest Firestore rules and retry.`
-- Ensure Firebase CLI is authenticated: `npx firebase login`
-- Deploy rules to production (includes named Firestore DB target): `npm run rules:deploy:prod`
-- Retry owner view and confirm unknown queue loads.
+### `Unknown ingredient queue access denied... [build:<id>]`
+- Confirm the visible build id is the latest deployment.
+- Validate CI Firestore deploy and smoke test status on latest `main` run.
+- For emergency recovery, deploy + smoke manually:
+  - `npm run rules:deploy:prod`
+  - `npm run rules:smoke:prod`
 
 ### Google sign-in popup fails locally
 - Add `localhost` / `127.0.0.1` to Firebase Auth authorized domains.

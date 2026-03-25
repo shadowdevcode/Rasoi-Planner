@@ -37,3 +37,65 @@ jobs:
 
       - name: Run full verification
         run: npm run verify:local
+
+  detect-firestore-changes:
+    name: detect-firestore-changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      firestore_changed: ${{ steps.filter.outputs.firestore_changed }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect firestore-related changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            firestore_changed:
+              - firestore.rules
+              - firebase.json
+              - firebase-applet-config.json
+              - scripts/print-firestore-rules-target.mjs
+              - scripts/smoke-firestore-unknown-queue.mjs
+
+  firestore-rules-deploy:
+    name: firestore-rules-deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-firestore-changes.outputs.firestore_changed == 'true'
+    needs:
+      - verify-local
+      - detect-firestore-changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify firestore deploy target
+        run: npm run rules:target:check
+
+      - name: Deploy Firestore rules (production)
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: npm run rules:deploy:prod
+
+      - name: Smoke test unknown ingredient queue access (production)
+        env:
+          SMOKE_OWNER_EMAIL: ${{ secrets.SMOKE_OWNER_EMAIL }}
+          SMOKE_OWNER_PASSWORD: ${{ secrets.SMOKE_OWNER_PASSWORD }}
+          SMOKE_OWNER_HOUSEHOLD_ID: ${{ secrets.SMOKE_OWNER_HOUSEHOLD_ID }}
+          SMOKE_NON_MEMBER_EMAIL: ${{ secrets.SMOKE_NON_MEMBER_EMAIL }}
+          SMOKE_NON_MEMBER_PASSWORD: ${{ secrets.SMOKE_NON_MEMBER_PASSWORD }}
+        run: npm run rules:smoke:prod
