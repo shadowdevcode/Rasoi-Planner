@@ -62,10 +62,6 @@ function resolveAppBuildId(): string {
   return 'dev-local';
 }
 
-function appendBuildIdToDiagnosticMessage(message: string, buildId: string): string {
-  return `${message} [build:${buildId}]`;
-}
-
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -321,7 +317,7 @@ export default function App() {
             membershipProbeResult,
           });
 
-          setUnknownQueueWarning(appendBuildIdToDiagnosticMessage(classification.userMessage, appBuildId));
+          setUnknownQueueWarning(classification.userMessage);
           hasLoadedUnknownQueue = true;
           markInitialViewReady();
         };
@@ -363,7 +359,7 @@ export default function App() {
                 unknownQueueUnsub();
                 unknownQueueUnsub = null;
               }
-              setUnknownQueueWarning(appendBuildIdToDiagnosticMessage('Review queue order is temporarily unavailable.', appBuildId));
+              setUnknownQueueWarning('Review queue order is temporarily unavailable.');
               subscribeUnknownQueueFallback();
               return;
             }
@@ -674,9 +670,6 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 sm:justify-end">
-              <div className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-wide text-orange-50/90 sm:block">
-                Build {appBuildId}
-              </div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm font-semibold text-white shadow-inner">
                 {isOwner ? <User size={16} /> : <ChefHat size={16} />}
                 <span>{isOwner ? appCopy.ownerRole : appCopy.cookRole}</span>
