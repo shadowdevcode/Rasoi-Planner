@@ -2,6 +2,13 @@ import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, History, Package, Plus, Search, Trash2 } from 'lucide-react';
 import { InventoryItem, InventoryStatus, PantryLog } from '../types';
 import { generateId } from '../utils/id';
+import {
+  getPantryCategoryLabel,
+  getPantryCategoryOptions,
+  normalizePantryCategory,
+  pantryCategoryMatchesSearch,
+  type PantryCategoryKey,
+} from '../utils/pantryCategory';
 
 interface Props {
   inventory: InventoryItem[];
@@ -12,11 +19,11 @@ interface Props {
   logs: PantryLog[];
 }
 
-const categories: readonly string[] = ['Spices', 'Pulses', 'Staples', 'Veggies', 'Dairy', 'Other'];
+const categoryOptions = getPantryCategoryOptions();
 
 export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventory, onDeleteInventoryItem, onClearAnomaly, logs }: Props) {
   const [newItemName, setNewItemName] = useState<string>('');
-  const [newItemCategory, setNewItemCategory] = useState<string>('Spices');
+  const [newItemCategory, setNewItemCategory] = useState<PantryCategoryKey>('spices');
   const [newItemQuantity, setNewItemQuantity] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [viewMode, setViewMode] = useState<'inventory' | 'logs'>('inventory');
@@ -50,7 +57,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
   const filteredInventory = inventory.filter(
     (item) =>
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchTerm.toLowerCase()),
+      pantryCategoryMatchesSearch(item.category, searchTerm),
   );
 
   const formatTime = (isoString: string): string => {
@@ -86,6 +93,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
               className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition-colors lg:flex-none ${
                 viewMode === 'inventory' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'
               }`}
+              data-testid="pantry-view-inventory"
             >
               Inventory
             </button>
@@ -94,6 +102,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors lg:flex-none ${
                 viewMode === 'logs' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500 hover:text-stone-700'
               }`}
+              data-testid="pantry-view-logs"
             >
               <History size={16} />
               Activity Logs
@@ -116,15 +125,17 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                 value={newItemName}
                 onChange={(event) => setNewItemName(event.target.value)}
                 className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                data-testid="pantry-new-item-name"
               />
               <select
                 value={newItemCategory}
-                onChange={(event) => setNewItemCategory(event.target.value)}
+                onChange={(event) => setNewItemCategory(normalizePantryCategory(event.target.value))}
                 className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                data-testid="pantry-new-item-category"
               >
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
+                {categoryOptions.map((category) => (
+                  <option key={category.value} value={category.value}>
+                    {category.label}
                   </option>
                 ))}
               </select>
@@ -134,10 +145,12 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                 value={newItemQuantity}
                 onChange={(event) => setNewItemQuantity(event.target.value)}
                 className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                data-testid="pantry-new-item-quantity"
               />
               <button
                 type="submit"
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-700"
+                data-testid="pantry-add-item"
               >
                 <Plus size={18} />
                 Add Item
@@ -159,6 +172,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   className="w-full rounded-xl border border-stone-300 bg-white py-3 pl-10 pr-4 text-base outline-none shadow-sm transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                  data-testid="pantry-search"
                 />
               </div>
             </div>
@@ -193,7 +207,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-sm text-stone-500">{item.category}</td>
+                        <td className="px-5 py-4 text-sm text-stone-500">{getPantryCategoryLabel(item.category)}</td>
                         <td className="px-5 py-4 text-sm text-stone-500">{item.defaultQuantity || '-'}</td>
                         <td className="px-5 py-4">
                           <select
@@ -206,6 +220,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                                   ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
                                   : 'border-red-200 bg-red-50 text-red-700'
                             }`}
+                            data-testid={`pantry-status-${item.id}`}
                           >
                             <option value="in-stock">In Stock</option>
                             <option value="low">Running Low</option>
@@ -232,6 +247,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                                 onClick={() => onClearAnomaly(item.id)}
                                 className="inline-flex items-center justify-center rounded-lg border border-emerald-200 px-3 py-2 text-emerald-700 transition-colors hover:bg-emerald-50"
                                 title="Verify & Clear Warning"
+                                data-testid={`pantry-clear-anomaly-${item.id}`}
                               >
                                 <CheckCircle2 size={18} />
                               </button>
@@ -240,6 +256,7 @@ export default function Pantry({ inventory, onAddInventoryItem, onUpdateInventor
                               onClick={() => handleDeleteItem(item.id)}
                               className="inline-flex items-center justify-center rounded-lg border border-stone-200 px-3 py-2 text-stone-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                               title="Delete Item"
+                              data-testid={`pantry-delete-${item.id}`}
                             >
                               <Trash2 size={18} />
                             </button>

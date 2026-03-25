@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Sun, Moon, Info, CheckCircle2 } from 'lucide-react';
 import { MealPlan } from '../types';
 import { getLocalDateKey } from '../utils/date';
@@ -8,8 +8,33 @@ interface Props {
   onUpdateMeal: (dateStr: string, field: keyof MealPlan, value: string) => void;
 }
 
+type MealDetailField = 'leftovers' | 'notes';
+
+type MealDetailDraft = Record<MealDetailField, string>;
+
+type MealDetailDrafts = Record<string, MealDetailDraft>;
+
+const DETAIL_SAVE_DEBOUNCE_MS = 500;
+
+function createEmptyDetailDraft(): MealDetailDraft {
+  return {
+    leftovers: '',
+    notes: '',
+  };
+}
+
+function getMealDetailValue(meal: MealPlan | undefined, field: MealDetailField): string {
+  if (!meal) {
+    return '';
+  }
+
+  return meal[field] ?? '';
+}
+
 export default function MealPlanner({ meals, onUpdateMeal }: Props) {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [detailDrafts, setDetailDrafts] = useState<MealDetailDrafts>({});
+  const detailSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
   const todayDateKey = getLocalDateKey(new Date());
 
   const getWeekDays = (date: Date): Date[] => {
@@ -42,13 +67,69 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
     onUpdateMeal(dateStr, field, value);
   };
 
+  const syncDetailDraft = (dateStr: string, field: MealDetailField, value: string): void => {
+    setDetailDrafts((currentDrafts) => {
+      const existingDraft = currentDrafts[dateStr] ?? createEmptyDetailDraft();
+      return {
+        ...currentDrafts,
+        [dateStr]: {
+          ...existingDraft,
+          [field]: value,
+        },
+      };
+    });
+  };
+
+  const clearDetailTimer = (dateStr: string, field: MealDetailField): void => {
+    const timerKey = `${dateStr}:${field}`;
+    const existingTimer = detailSaveTimers.current[timerKey];
+    if (existingTimer !== null && existingTimer !== undefined) {
+      clearTimeout(existingTimer);
+    }
+    detailSaveTimers.current[timerKey] = null;
+  };
+
+  const flushDetailSave = (dateStr: string, field: MealDetailField, value: string): void => {
+    clearDetailTimer(dateStr, field);
+    onUpdateMeal(dateStr, field, value);
+  };
+
+  const scheduleDetailSave = (dateStr: string, field: MealDetailField, value: string): void => {
+    clearDetailTimer(dateStr, field);
+    const timerKey = `${dateStr}:${field}`;
+    detailSaveTimers.current[timerKey] = setTimeout(() => {
+      onUpdateMeal(dateStr, field, value);
+      detailSaveTimers.current[timerKey] = null;
+    }, DETAIL_SAVE_DEBOUNCE_MS);
+  };
+
+  const handleDetailChange = (dateStr: string, field: MealDetailField, value: string): void => {
+    syncDetailDraft(dateStr, field, value);
+    scheduleDetailSave(dateStr, field, value);
+  };
+
+  const handleDetailBlur = (dateStr: string, field: MealDetailField, value: string): void => {
+    flushDetailSave(dateStr, field, value);
+  };
+
+  useEffect(() => {
+    return () => {
+      Object.values(detailSaveTimers.current).forEach((timer) => {
+        if (timer !== null && timer !== undefined) {
+          clearTimeout(timer);
+        }
+      });
+    };
+  }, []);
+
   return (
     <div className="space-y-5">
       <div className="rounded-[24px] border border-stone-200 bg-white px-3 py-3 shadow-sm sm:px-4 lg:px-5">
-        <div className="flex items-center justify-between gap-2 rounded-[20px] bg-stone-50 px-2 py-2 sm:px-3">
+        <div className="flex items-center justify-between gap-2 rounded-[20px] bg-stone-50 px-2 py-3 sm:px-3 sm:py-3.5">
           <button
             onClick={prevWeek}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900"
+            data-testid="meal-week-prev"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
             aria-label="Previous week"
           >
             <ChevronLeft size={22} />
@@ -62,7 +143,8 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
           </div>
           <button
             onClick={nextWeek}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900"
+            data-testid="meal-week-next"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-stone-600 transition-colors hover:bg-white hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
             aria-label="Next week"
           >
             <ChevronRight size={22} />
@@ -71,10 +153,13 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-        {weekDays.map((day) => {
+        {weekDays.map((day, index) => {
           const dateStr = getLocalDateKey(day);
           const isToday = dateStr === todayDateKey;
           const dayMeals = meals[dateStr] || { morning: '', evening: '', notes: '', leftovers: '' };
+          const dayDetailDraft = detailDrafts[dateStr];
+          const leftoversValue = dayDetailDraft?.leftovers ?? getMealDetailValue(dayMeals, 'leftovers');
+          const notesValue = dayDetailDraft?.notes ?? getMealDetailValue(dayMeals, 'notes');
 
           return (
             <section
@@ -112,8 +197,9 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
                   <textarea
                     value={dayMeals.morning}
                     onChange={(event) => handleMealChange(dateStr, 'morning', event.target.value)}
+                    data-testid={`meal-day-${index}-morning`}
                     placeholder="Plan morning/lunch..."
-                    className="min-h-28 w-full resize-y rounded-2xl border border-stone-200 bg-stone-50 px-3 py-3 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-200"
+                    className="min-h-32 w-full resize-y rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3.5 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-200"
                   />
                 </div>
 
@@ -125,32 +211,51 @@ export default function MealPlanner({ meals, onUpdateMeal }: Props) {
                   <textarea
                     value={dayMeals.evening}
                     onChange={(event) => handleMealChange(dateStr, 'evening', event.target.value)}
+                    data-testid={`meal-day-${index}-evening`}
                     placeholder="Dinner"
-                    className="min-h-28 w-full resize-y rounded-2xl border border-stone-200 bg-stone-50 px-3 py-3 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-200"
+                    className="min-h-32 w-full resize-y rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3.5 text-[15px] leading-6 text-stone-800 outline-none transition focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-200"
                   />
                 </div>
 
-                <div className="mt-auto rounded-[20px] border border-stone-200/80 bg-stone-50/80 p-3.5">
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">Details</p>
-                  <div className="space-y-3">
-                    <label className="relative block">
-                      <CheckCircle2 size={15} className="absolute left-3 top-3 text-emerald-500" />
-                      <input
-                        type="text"
-                        value={dayMeals.leftovers || ''}
-                        onChange={(event) => handleMealChange(dateStr, 'leftovers', event.target.value)}
-                        placeholder="Leftovers"
-                        className="w-full rounded-xl border border-emerald-200 bg-white py-2.5 pl-9 pr-3 text-sm text-stone-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                <div
+                  className="mt-auto rounded-[22px] border border-stone-200/80 bg-stone-50/90 p-4"
+                  data-testid={`meal-day-${index}-details`}
+                >
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">Details</p>
+                      <p className="mt-1 text-sm text-stone-500">Add leftovers and notes here. Changes save after a short pause or when you leave the field.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4">
+                    <label className="block">
+                      <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-stone-800">
+                        <CheckCircle2 size={16} className="text-emerald-600" />
+                        Leftovers
+                      </span>
+                      <textarea
+                        value={leftoversValue}
+                        onChange={(event) => handleDetailChange(dateStr, 'leftovers', event.target.value)}
+                        onBlur={(event) => handleDetailBlur(dateStr, 'leftovers', event.target.value)}
+                        data-testid={`meal-day-${index}-leftovers`}
+                        rows={4}
+                        placeholder="Example: Use leftover dal for lunch, keep 2 rotis aside"
+                        className="min-h-28 w-full resize-y rounded-2xl border border-emerald-200 bg-white px-4 py-3.5 text-sm leading-6 text-stone-700 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                       />
                     </label>
-                    <label className="relative block">
-                      <Info size={15} className="absolute left-3 top-3 text-sky-500" />
-                      <input
-                        type="text"
-                        value={dayMeals.notes || ''}
-                        onChange={(event) => handleMealChange(dateStr, 'notes', event.target.value)}
-                        placeholder="Notes"
-                        className="w-full rounded-xl border border-sky-200 bg-white py-2.5 pl-9 pr-3 text-sm text-stone-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                    <label className="block">
+                      <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-stone-800">
+                        <Info size={16} className="text-sky-600" />
+                        Notes
+                      </span>
+                      <textarea
+                        value={notesValue}
+                        onChange={(event) => handleDetailChange(dateStr, 'notes', event.target.value)}
+                        onBlur={(event) => handleDetailBlur(dateStr, 'notes', event.target.value)}
+                        data-testid={`meal-day-${index}-notes`}
+                        rows={4}
+                        placeholder="Example: Make it less spicy for kids"
+                        className="min-h-28 w-full resize-y rounded-2xl border border-sky-200 bg-white px-4 py-3.5 text-sm leading-6 text-stone-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                       />
                     </label>
                   </div>

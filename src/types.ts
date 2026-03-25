@@ -1,5 +1,6 @@
 export type Role = 'owner' | 'cook';
 export type Language = 'en' | 'hi';
+export type UiLanguage = 'en' | 'hi';
 
 export interface MealPlan {
   morning: string;
@@ -40,6 +41,11 @@ export interface AppState {
   inventory: InventoryItem[];
   meals: Record<string, MealPlan>;
   logs: PantryLog[];
+}
+
+export interface HouseholdPreferences {
+  ownerLanguage?: UiLanguage;
+  cookLanguage?: UiLanguage;
 }
 
 export interface AiParseResult {

@@ -8,12 +8,14 @@ import {
   runTransaction,
   where,
 } from 'firebase/firestore';
-import { Role } from '../types';
+import { Role, UiLanguage } from '../types';
 import { seedHouseholdData } from './seedService';
 
 export interface HouseholdData {
   ownerId: string;
   cookEmail: string;
+  ownerLanguage?: UiLanguage;
+  cookLanguage?: UiLanguage;
 }
 
 export interface ResolvedHousehold {
@@ -58,7 +60,12 @@ async function ensureOwnerHousehold(db: Firestore, ownerId: string): Promise<Ens
       };
     }
 
-    transaction.set(householdRef, { ownerId, cookEmail: '' });
+    transaction.set(householdRef, {
+      ownerId,
+      cookEmail: '',
+      ownerLanguage: 'en',
+      cookLanguage: 'hi',
+    });
     return {
       householdId: householdRef.id,
       wasCreated: true,

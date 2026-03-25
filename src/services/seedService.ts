@@ -8,18 +8,19 @@ import {
 } from 'firebase/firestore';
 import { InventoryItem, MealPlan } from '../types';
 import { getLocalDateKey } from '../utils/date';
+import { normalizePantryCategory } from '../utils/pantryCategory';
 
 const initialInventory: InventoryItem[] = [
-  { id: '1', name: 'Turmeric (Haldi)', nameHi: 'हल्दी', category: 'Spices', status: 'in-stock', icon: '🟡', defaultQuantity: '200g' },
-  { id: '2', name: 'Red Chilli Powder', nameHi: 'लाल मिर्च', category: 'Spices', status: 'in-stock', icon: '🌶️', defaultQuantity: '200g' },
-  { id: '3', name: 'Garam Masala', nameHi: 'गरम मसाला', category: 'Spices', status: 'in-stock', icon: '🧆', defaultQuantity: '100g' },
-  { id: '4', name: 'Toor Dal', nameHi: 'तूर दाल', category: 'Pulses', status: 'in-stock', icon: '🥣', defaultQuantity: '1kg' },
-  { id: '5', name: 'Basmati Rice', nameHi: 'चावल', category: 'Staples', status: 'in-stock', icon: '🍚', defaultQuantity: '5kg' },
-  { id: '6', name: 'Atta (Wheat Flour)', nameHi: 'आटा', category: 'Staples', status: 'low', icon: '🌾', defaultQuantity: '5kg' },
-  { id: '7', name: 'Mustard Oil', nameHi: 'सरसों का तेल', category: 'Staples', status: 'in-stock', icon: '🛢️', defaultQuantity: '1L' },
-  { id: '8', name: 'Onions', nameHi: 'प्याज', category: 'Veggies', status: 'in-stock', icon: '🧅', defaultQuantity: '2kg' },
-  { id: '9', name: 'Tomatoes', nameHi: 'टमाटर', category: 'Veggies', status: 'out', icon: '🍅', defaultQuantity: '1kg' },
-  { id: '10', name: 'Milk', nameHi: 'दूध', category: 'Dairy', status: 'in-stock', icon: '🥛', defaultQuantity: '1L' },
+  { id: '1', name: 'Turmeric (Haldi)', nameHi: 'हल्दी', category: normalizePantryCategory('Spices'), status: 'in-stock', icon: '🟡', defaultQuantity: '200g' },
+  { id: '2', name: 'Red Chilli Powder', nameHi: 'लाल मिर्च', category: normalizePantryCategory('Spices'), status: 'in-stock', icon: '🌶️', defaultQuantity: '200g' },
+  { id: '3', name: 'Garam Masala', nameHi: 'गरम मसाला', category: normalizePantryCategory('Spices'), status: 'in-stock', icon: '🧆', defaultQuantity: '100g' },
+  { id: '4', name: 'Toor Dal', nameHi: 'तूर दाल', category: normalizePantryCategory('Pulses'), status: 'in-stock', icon: '🥣', defaultQuantity: '1kg' },
+  { id: '5', name: 'Basmati Rice', nameHi: 'चावल', category: normalizePantryCategory('Staples'), status: 'in-stock', icon: '🍚', defaultQuantity: '5kg' },
+  { id: '6', name: 'Atta (Wheat Flour)', nameHi: 'आटा', category: normalizePantryCategory('Staples'), status: 'low', icon: '🌾', defaultQuantity: '5kg' },
+  { id: '7', name: 'Mustard Oil', nameHi: 'सरसों का तेल', category: normalizePantryCategory('Staples'), status: 'in-stock', icon: '🛢️', defaultQuantity: '1L' },
+  { id: '8', name: 'Onions', nameHi: 'प्याज', category: normalizePantryCategory('Veggies'), status: 'in-stock', icon: '🧅', defaultQuantity: '2kg' },
+  { id: '9', name: 'Tomatoes', nameHi: 'टमाटर', category: normalizePantryCategory('Veggies'), status: 'out', icon: '🍅', defaultQuantity: '1kg' },
+  { id: '10', name: 'Milk', nameHi: 'दूध', category: normalizePantryCategory('Dairy'), status: 'in-stock', icon: '🥛', defaultQuantity: '1L' },
 ];
 
 function getInitialMeals(): Record<string, MealPlan> {

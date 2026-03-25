@@ -1,4 +1,5 @@
 import { AiParseResult, InventoryPromptItem, Language, validateAiParseResult } from './validation.js';
+import { normalizePantryCategory } from '../../src/utils/pantryCategory.js';
 
 type ParseCookVoiceInputRequest = {
   input: string;
@@ -130,7 +131,7 @@ function buildPrompt(input: string, inventory: InventoryPromptItem[], lang: Lang
       
       Task 1: Intent Classification. Is this gibberish, chit-chat, or missing an item name? If yes, set 'understood' to false and provide a helpful 'message' asking for clarification.
       Task 2: Match their request to the following inventory items: [${inventoryContext}]. Determine the new status ('in-stock', 'low', 'out'). If they specify a quantity (e.g., "2 kilo", "500g", "3 packets"), extract it as 'requestedQuantity'.
-      Task 3: If they mention an item NOT in the inventory, add it to 'unlistedItems' with a guessed status, a guessed 'category' (e.g., Vegetables, Spices, Dairy, Grains, Meat, Snacks, Cleaning), and any 'requestedQuantity'.
+      Task 3: If they mention an item NOT in the inventory, add it to 'unlistedItems' with a guessed status, a guessed 'category' using only canonical keys: spices, pulses, staples, veggies, dairy, or other, and any 'requestedQuantity'.
       
       Return a JSON object matching this schema.`;
 }
@@ -254,7 +255,14 @@ async function generateAiParseResult(input: string, inventory: InventoryPromptIt
   for (let attempt = 1; attempt <= MAX_AI_ATTEMPTS; attempt += 1) {
     try {
       const parsed = await requestGeminiJson(prompt, apiKey, aiModel, AI_REQUEST_TIMEOUT_MS);
-      return validateAiParseResult(parsed);
+      const validated = validateAiParseResult(parsed);
+      return {
+        ...validated,
+        unlistedItems: validated.unlistedItems.map((item) => ({
+          ...item,
+          category: normalizePantryCategory(item.category),
+        })),
+      };
     } catch (error) {
       lastError = error;
       console.warn('ai_parse_attempt_failed', createAttemptWarning(attempt, input, inventory.length, lang, error));

@@ -9,6 +9,7 @@ import {
 import { InventoryItem, InventoryStatus, Role } from '../types';
 import { sanitizeFirestorePayload } from '../utils/firestorePayload';
 import { generateId } from '../utils/id';
+import { normalizePantryCategory } from '../utils/pantryCategory';
 import { buildPantryLog } from './logService';
 
 interface UpdateInventoryWithLogInput {
@@ -82,9 +83,14 @@ export async function updateInventoryStatusWithLog(input: UpdateInventoryWithLog
 }
 
 export async function addInventoryItem(db: Firestore, householdId: string, item: InventoryItem): Promise<void> {
+  const normalizedItem: InventoryItem = {
+    ...item,
+    category: normalizePantryCategory(item.category),
+  };
+
   await setDoc(
-    doc(db, `households/${householdId}/inventory`, item.id),
-    sanitizeFirestorePayload(item),
+    doc(db, `households/${householdId}/inventory`, normalizedItem.id),
+    sanitizeFirestorePayload(normalizedItem),
   );
 }
 
@@ -98,7 +104,7 @@ export async function addUnlistedItemWithLog(input: AddUnlistedItemWithLogInput)
   const inventoryItem: InventoryItem = {
     id: generateId(),
     name,
-    category: category || 'Requested',
+    category: normalizePantryCategory(category),
     status,
     icon: '🆕',
     requestedQuantity,
