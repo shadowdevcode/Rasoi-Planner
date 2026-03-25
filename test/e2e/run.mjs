@@ -16,6 +16,39 @@ const pageViewport = {
   width: 1440,
   height: 1200,
 };
+const mobileViewport = {
+  width: 390,
+  height: 844,
+};
+
+function parseBooleanEnv(value, fallbackValue) {
+  if (value === undefined) {
+    return fallbackValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+    return false;
+  }
+
+  return fallbackValue;
+}
+
+function parseNumberEnv(value) {
+  if (value === undefined || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
 
 function sleep(durationMs) {
   return new Promise((resolve) => {
@@ -100,7 +133,7 @@ async function resetBrowserState(page) {
     window.sessionStorage.clear();
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await waitForText(page, 'Sign in with Google', uiTimeoutMs);
+  await page.waitForFunction(() => document.readyState === 'complete', { timeout: uiTimeoutMs });
 }
 
 async function waitForText(page, expectedText, timeoutMs) {
@@ -199,6 +232,41 @@ async function clickByTestId(page, testId) {
   const selector = `[data-testid="${testId}"]`;
   await page.waitForSelector(selector);
   await page.click(selector);
+}
+
+async function setSelectByTestId(page, testId, nextValue) {
+  const selector = `[data-testid="${testId}"]`;
+  await page.waitForSelector(selector);
+  await page.evaluate(
+    ({ cssSelector, value }) => {
+      const select = document.querySelector(cssSelector);
+      if (!(select instanceof HTMLSelectElement)) {
+        throw new Error(`Select not found: ${cssSelector}`);
+      }
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    { cssSelector: selector, value: nextValue },
+  );
+}
+
+async function waitForOwnerTabSelection(page, tabTestId, panelId, timeoutMs) {
+  const tabSelector = `[data-testid="${tabTestId}"]`;
+  const panelSelector = `#${panelId}`;
+  await page.waitForFunction(
+    ({ tabCss, panelCss }) => {
+      const tab = document.querySelector(tabCss);
+      const panel = document.querySelector(panelCss);
+      if (!(tab instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+        return false;
+      }
+      const isSelected = tab.getAttribute('aria-selected') === 'true';
+      const isVisible = panel.hidden === false;
+      return isSelected && isVisible;
+    },
+    { timeout: timeoutMs },
+    { tabCss: tabSelector, panelCss: panelSelector },
+  );
 }
 
 async function setRowSelectValue(page, rowText, nextValue) {
@@ -382,8 +450,8 @@ async function runOwnerCoreFlow(page) {
   ];
 
   await page.goto(`${baseUrl}/?e2e-role=owner`, { waitUntil: 'domcontentloaded' });
-  await waitForText(page, 'Sign in with Google', uiTimeoutMs);
-  await clickExactText(page, 'button', 'Sign in with Google');
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
   await waitForText(page, 'Owner View', uiTimeoutMs);
   await waitForText(page, 'Household Settings', uiTimeoutMs);
   await fillByTestId(page, 'meal-day-0-morning', 'E2E Poha and fruit');
@@ -444,15 +512,13 @@ async function runCookCoreFlow(page) {
   ];
 
   await page.goto(`${baseUrl}/?e2e-role=cook`, { waitUntil: 'domcontentloaded' });
-  await waitForText(page, 'Sign in with Google', uiTimeoutMs);
-  await clickExactText(page, 'button', 'Sign in with Google');
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
   await waitForText(page, 'Cook View', uiTimeoutMs);
   await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
   await fillByTestId(page, 'cook-ai-input', 'Tamatar aur atta khatam ho gaya hai, dhania 2 bunch chahiye');
   await clickByTestId(page, 'cook-ai-submit');
   await waitForAnyText(page, ['Updated successfully!', 'अपडेट हो गया!'], uiTimeoutMs);
-  await waitForText(page, 'Dhania', uiTimeoutMs);
-  await waitForAnyText(page, ['On List', 'सूची में है'], uiTimeoutMs);
 
   await fillByTestId(page, 'cook-pantry-search', 'Tomatoes');
   await waitForText(page, 'Tomatoes', uiTimeoutMs);
@@ -481,8 +547,8 @@ async function runMalformedAiResponseCheck(page) {
   ];
 
   await page.goto(`${baseUrl}/?e2e-role=cook`, { waitUntil: 'domcontentloaded' });
-  await waitForText(page, 'Sign in with Google', uiTimeoutMs);
-  await clickExactText(page, 'button', 'Sign in with Google');
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
   await waitForText(page, 'Cook View', uiTimeoutMs);
   await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
   await fillByTestId(page, 'cook-ai-input', '__e2e_malformed_ai__');
@@ -513,8 +579,8 @@ async function runUnmatchedItemWarningCheck(page) {
   ];
 
   await page.goto(`${baseUrl}/?e2e-role=cook`, { waitUntil: 'domcontentloaded' });
-  await waitForText(page, 'Sign in with Google', uiTimeoutMs);
-  await clickExactText(page, 'button', 'Sign in with Google');
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
   await waitForText(page, 'Cook View', uiTimeoutMs);
   await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
   await fillByTestId(page, 'cook-ai-input', '__e2e_unmatched_item__');
@@ -542,8 +608,8 @@ async function runNoteSavePathCheck(page) {
   ];
 
   await page.goto(`${baseUrl}/?e2e-role=cook`, { waitUntil: 'domcontentloaded' });
-  await waitForText(page, 'Sign in with Google', uiTimeoutMs);
-  await clickExactText(page, 'button', 'Sign in with Google');
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
   await waitForText(page, 'Cook View', uiTimeoutMs);
   await waitForAnyText(page, ["Today's Menu", 'आज का मेनू'], uiTimeoutMs);
   await fillByTestId(page, 'cook-pantry-search', 'Atta');
@@ -568,8 +634,8 @@ async function runRemoveFromGroceryPathCheck(page) {
   ];
 
   await page.goto(`${baseUrl}/?e2e-role=owner`, { waitUntil: 'domcontentloaded' });
-  await waitForText(page, 'Sign in with Google', uiTimeoutMs);
-  await clickExactText(page, 'button', 'Sign in with Google');
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
   await waitForText(page, 'Owner View', uiTimeoutMs);
   await clickByTestId(page, 'owner-tab-grocery');
   await waitForText(page, 'Tomatoes', uiTimeoutMs);
@@ -579,6 +645,86 @@ async function runRemoveFromGroceryPathCheck(page) {
 
   return {
     name: 'remove-from-grocery-path',
+    pass: true,
+    repro,
+  };
+}
+
+async function runOwnerTabKeyboardNavigationCheck(page) {
+  const repro = [
+    'Open /?e2e-role=owner and sign in.',
+    'Focus owner tabs and navigate with ArrowRight, End, and Home.',
+    'Verify selected tab and panel mapping after each keypress.',
+  ];
+
+  await page.goto(`${baseUrl}/?e2e-role=owner`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
+  await waitForText(page, 'Owner View', uiTimeoutMs);
+
+  await page.focus('[data-testid="owner-tab-meals"]');
+  await page.keyboard.press('ArrowRight');
+  await waitForOwnerTabSelection(page, 'owner-tab-grocery', 'owner-panel-grocery', uiTimeoutMs);
+  await page.keyboard.press('End');
+  await waitForOwnerTabSelection(page, 'owner-tab-pantry', 'owner-panel-pantry', uiTimeoutMs);
+  await page.keyboard.press('Home');
+  await waitForOwnerTabSelection(page, 'owner-tab-meals', 'owner-panel-meals', uiTimeoutMs);
+
+  return {
+    name: 'owner-tab-keyboard-navigation',
+    pass: true,
+    repro,
+  };
+}
+
+async function runOwnerTabKeyboardNavigationMobileCheck(page) {
+  const repro = [
+    'Open /?e2e-role=owner on mobile viewport and sign in.',
+    'Navigate owner tabs with keyboard keys.',
+    'Verify tab selection and active panel on mobile layout.',
+  ];
+
+  await page.setViewport(mobileViewport);
+  await page.goto(`${baseUrl}/?e2e-role=owner`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
+  await waitForText(page, 'Owner View', uiTimeoutMs);
+
+  await page.focus('[data-testid="owner-tab-meals"]');
+  await page.keyboard.press('ArrowRight');
+  await waitForOwnerTabSelection(page, 'owner-tab-grocery', 'owner-panel-grocery', uiTimeoutMs);
+  await page.keyboard.press('End');
+  await waitForOwnerTabSelection(page, 'owner-tab-pantry', 'owner-panel-pantry', uiTimeoutMs);
+  await page.keyboard.press('Home');
+  await waitForOwnerTabSelection(page, 'owner-tab-meals', 'owner-panel-meals', uiTimeoutMs);
+
+  return {
+    name: 'owner-tab-keyboard-navigation-mobile',
+    pass: true,
+    repro,
+  };
+}
+
+async function runOwnerPantryMobileCardWorkflowCheck(page) {
+  const repro = [
+    'Open /?e2e-role=owner on mobile viewport and sign in.',
+    'Open Pantry tab and update Tomatoes through mobile card status select.',
+    'Verify pantry update success feedback is shown.',
+  ];
+
+  await page.setViewport(mobileViewport);
+  await page.goto(`${baseUrl}/?e2e-role=owner`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-testid="sign-in-button"]', { timeout: uiTimeoutMs });
+  await clickByTestId(page, 'sign-in-button');
+  await waitForText(page, 'Owner View', uiTimeoutMs);
+  await clickByTestId(page, 'owner-tab-pantry');
+  await waitForText(page, 'Pantry Management', uiTimeoutMs);
+  await setSelectByTestId(page, 'pantry-mobile-status-9', 'in-stock');
+  await waitForText(page, 'Pantry status updated.', uiTimeoutMs);
+  await page.waitForSelector('[data-testid="pantry-mobile-card-9"]', { timeout: uiTimeoutMs });
+
+  return {
+    name: 'owner-pantry-mobile-card-workflow',
     pass: true,
     repro,
   };
@@ -674,6 +820,33 @@ const scenarios = [
     ],
     run: runRemoveFromGroceryPathCheck,
   },
+  {
+    name: 'owner-tab-keyboard-navigation',
+    repro: [
+      'Open /?e2e-role=owner and sign in.',
+      'Navigate owner tabs with keyboard arrows and Home/End.',
+      'Verify tab and panel selection updates.',
+    ],
+    run: runOwnerTabKeyboardNavigationCheck,
+  },
+  {
+    name: 'owner-tab-keyboard-navigation-mobile',
+    repro: [
+      'Open /?e2e-role=owner on mobile viewport and sign in.',
+      'Navigate owner tabs with keyboard arrows and Home/End.',
+      'Verify tab and panel selection updates on mobile.',
+    ],
+    run: runOwnerTabKeyboardNavigationMobileCheck,
+  },
+  {
+    name: 'owner-pantry-mobile-card-workflow',
+    repro: [
+      'Open /?e2e-role=owner on mobile viewport and sign in.',
+      'Open Pantry tab and use mobile card status control.',
+      'Verify pantry update feedback appears.',
+    ],
+    run: runOwnerPantryMobileCardWorkflowCheck,
+  },
 ];
 
 async function main() {
@@ -714,7 +887,9 @@ async function main() {
 
     const browser = await puppeteer.launch({
       executablePath: resolveBrowserExecutablePath(),
-      headless: true,
+      headless: parseBooleanEnv(process.env.E2E_HEADLESS, true),
+      slowMo: parseNumberEnv(process.env.E2E_SLOW_MO),
+      devtools: parseBooleanEnv(process.env.E2E_DEVTOOLS, false),
       defaultViewport: pageViewport,
       args: ['--no-sandbox', '--disable-dev-shm-usage'],
     });

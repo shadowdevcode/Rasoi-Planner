@@ -56,6 +56,13 @@ export async function signInWithPopup(auth: Auth, _provider?: GoogleAuthProvider
   return { user: nextUser };
 }
 
+export async function signInWithRedirect(auth: Auth, _provider?: GoogleAuthProvider): Promise<void> {
+  const nextUser = createMockUser(resolveRequestedRole());
+  saveSignedInUser(nextUser);
+  auth.currentUser = nextUser;
+  notifyAuthListeners();
+}
+
 export async function signOut(auth: Auth): Promise<void> {
   saveSignedInUser(null);
   auth.currentUser = null;

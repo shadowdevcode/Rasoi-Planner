@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-03-23T16:08:17.174Z",
-  "finishedAt": "2026-03-23T16:08:21.690Z",
+  "startedAt": "2026-03-25T14:24:01.381Z",
+  "finishedAt": "2026-03-25T14:24:11.431Z",
   "baseUrl": "http://127.0.0.1:3000",
   "browserExecutablePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "overallPass": true,
+  "overallPass": false,
   "results": [
     {
       "name": "owner-core-journey",
-      "pass": true,
+      "pass": false,
       "repro": [
         "Open /?e2e-role=owner.",
         "Click \"Sign in with Google\".",
@@ -15,18 +15,30 @@
         "Open Grocery List and mark Tomatoes as bought.",
         "Open Pantry & Logs, add Jeera, then mark it Running Low.",
         "Open Activity Logs and verify the new entry is shown."
-      ]
+      ],
+      "error": {
+        "name": "Error",
+        "message": "Unable to click button \"Mark Bought\" for row containing \"Tomatoes\".",
+        "stack": "Error: Unable to click button \"Mark Bought\" for row containing \"Tomatoes\".\n    at clickTableRowButton (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:330:11)\n    at async Object.runOwnerCoreFlow [as run] (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:483:3)\n    at async runScenario (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:740:12)\n    at async main (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:899:24)"
+      },
+      "screenshotPath": "/Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/artifacts/owner-core-journey.png"
     },
     {
       "name": "cook-ai-journey",
-      "pass": true,
+      "pass": false,
       "repro": [
         "Open /?e2e-role=cook.",
         "Click \"Sign in with Google\".",
-        "Switch to English.",
+        "Use default cook language profile.",
         "Use Smart Assistant with the standard pantry update prompt.",
-        "Search Tomatoes, mark it Full, add a note for Atta, and verify the note is rendered."
-      ]
+        "Search tomatoes, mark it Full, add a note for atta, and verify the note is rendered."
+      ],
+      "error": {
+        "name": "Error",
+        "message": "Unable to set cook status Full for Tomatoes.",
+        "stack": "Error: Unable to set cook status Full for Tomatoes.\n    at setCookStatus (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:368:11)\n    at async Object.runCookCoreFlow [as run] (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:525:3)\n    at async runScenario (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:740:12)\n    at async main (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:899:24)"
+      },
+      "screenshotPath": "/Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/artifacts/cook-ai-journey.png"
     },
     {
       "name": "ai-malformed-response",
@@ -34,7 +46,7 @@
       "repro": [
         "Open /?e2e-role=cook.",
         "Click \"Sign in with Google\".",
-        "Switch to English.",
+        "Use default cook language profile.",
         "Submit the malformed AI marker prompt.",
         "Verify the safe AI error message is rendered and the page stays usable."
       ]
@@ -45,34 +57,73 @@
       "repro": [
         "Open /?e2e-role=cook.",
         "Click \"Sign in with Google\".",
-        "Switch to English.",
+        "Use default cook language profile.",
         "Submit the unmatched item marker prompt.",
         "Verify the successful update path runs and Milk moves onto the list."
       ]
     },
     {
       "name": "note-save-path",
-      "pass": true,
+      "pass": false,
       "repro": [
         "Open /?e2e-role=cook.",
         "Click \"Sign in with Google\".",
-        "Switch to English.",
+        "Use default cook language profile.",
         "Search for Atta.",
         "Add a note and save it.",
         "Verify the note renders as saved quantity text."
-      ]
+      ],
+      "error": {
+        "name": "Error",
+        "message": "Unable to open note editor for Atta.",
+        "stack": "Error: Unable to open note editor for Atta.\n    at setCookNote (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:402:11)\n    at async Object.runNoteSavePathCheck [as run] (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:617:3)\n    at async runScenario (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:740:12)\n    at async main (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:899:24)"
+      },
+      "screenshotPath": "/Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/artifacts/note-save-path.png"
     },
     {
       "name": "remove-from-grocery-path",
-      "pass": true,
+      "pass": false,
       "repro": [
         "Open /?e2e-role=owner.",
         "Click \"Sign in with Google\".",
         "Open Grocery List.",
         "Mark Tomatoes as bought.",
         "Verify Tomatoes is removed from the grocery list."
+      ],
+      "error": {
+        "name": "Error",
+        "message": "Unable to click button \"Mark Bought\" for row containing \"Tomatoes\".",
+        "stack": "Error: Unable to click button \"Mark Bought\" for row containing \"Tomatoes\".\n    at clickTableRowButton (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:330:11)\n    at async Object.runRemoveFromGroceryPathCheck [as run] (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:642:3)\n    at async runScenario (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:740:12)\n    at async main (file:///Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/run.mjs:899:24)"
+      },
+      "screenshotPath": "/Users/vijaysehgal/Downloads/02-Portfolio/Rasoi-Planner-Project/test/e2e/artifacts/remove-from-grocery-path.png"
+    },
+    {
+      "name": "owner-tab-keyboard-navigation",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=owner and sign in.",
+        "Focus owner tabs and navigate with ArrowRight, End, and Home.",
+        "Verify selected tab and panel mapping after each keypress."
+      ]
+    },
+    {
+      "name": "owner-tab-keyboard-navigation-mobile",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=owner on mobile viewport and sign in.",
+        "Navigate owner tabs with keyboard keys.",
+        "Verify tab selection and active panel on mobile layout."
+      ]
+    },
+    {
+      "name": "owner-pantry-mobile-card-workflow",
+      "pass": true,
+      "repro": [
+        "Open /?e2e-role=owner on mobile viewport and sign in.",
+        "Open Pantry tab and update Tomatoes through mobile card status select.",
+        "Verify pantry update success feedback is shown."
       ]
     }
   ],
-  "serverOutput": "\n> react-example@0.0.0 dev:e2e\n> vite --config test/e2e/vite.e2e.config.ts\n\n9:38:17 PM [vite] (client) Re-optimizing dependencies because vite config has changed\n\n  VITE v6.4.1  ready in 425 ms\n\n  ➜  Local:   http://127.0.0.1:3000/\n"
+  "serverOutput": "\n> react-example@0.0.0 dev:e2e\n> vite --config test/e2e/vite.e2e.config.ts\n\n\n  VITE v6.4.1  ready in 267 ms\n\n  ➜  Local:   http://127.0.0.1:3000/\n"
 }

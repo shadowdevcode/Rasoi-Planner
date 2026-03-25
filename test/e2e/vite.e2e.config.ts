@@ -63,6 +63,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), aiParseMockPlugin],
   define: {
     'process.env.GEMINI_API_KEY': JSON.stringify('e2e-mock-key'),
+    'process.env.VITE_INGREDIENT_IMAGE_BASE_URL': JSON.stringify('https://example.com/ingredients'),
+    'import.meta.env.VITE_INGREDIENT_IMAGE_BASE_URL': JSON.stringify('https://example.com/ingredients'),
   },
   resolve: {
     alias: {
