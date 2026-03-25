@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { ChefHat, User, LogIn, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ChefHat, User, LogIn, Loader2, AlertCircle, CheckCircle2, Globe2, Mail } from 'lucide-react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -13,22 +14,53 @@ import {
 import OwnerView from './components/OwnerView';
 import CookView from './components/CookView';
 import { auth, db, loginWithGoogle, logout } from './firebase';
-import { InventoryItem, InventoryStatus, MealPlan, PantryLog, Role, UiLanguage } from './types';
+import { InventoryItem, InventoryStatus, MealPlan, PantryLog, Role, UiLanguage, UnknownIngredientQueueItem } from './types';
 import { toUserFacingError } from './utils/error';
 import {
   addInventoryItem,
-  addUnlistedItemWithLog,
   clearAnomaly,
   deleteInventoryItem,
+  dismissUnknownIngredientQueueItem,
+  promoteUnknownIngredientQueueItem,
+  queueUnknownIngredient,
   updateInventoryStatusWithLog,
 } from './services/inventoryService';
 import { upsertMealField } from './services/mealService';
 import { HouseholdData, resolveOrCreateHousehold } from './services/householdService';
 import { getAppCopy } from './i18n/copy';
+import firebaseConfig from '../firebase-applet-config.json';
+import {
+  buildUnknownQueueTargetFingerprint,
+  classifyHouseholdMembershipProbe,
+  getUnknownQueueLoadErrorMessage,
+  HouseholdMembershipProbeResult,
+  isFirestoreFailedPreconditionError,
+  sortUnknownIngredientQueueItemsByCreatedAt,
+  toFirestoreListenerErrorInfo,
+} from './utils/unknownQueue';
 
 interface UiFeedback {
   kind: 'success' | 'error';
   message: string;
+}
+
+function resolveAppBuildId(): string {
+  const viteEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  const explicitBuildId = viteEnv?.VITE_BUILD_ID;
+  if (typeof explicitBuildId === 'string' && explicitBuildId.trim().length > 0) {
+    return explicitBuildId.trim();
+  }
+
+  const commitBuildId = viteEnv?.VITE_VERCEL_GIT_COMMIT_SHA;
+  if (typeof commitBuildId === 'string' && commitBuildId.trim().length > 0) {
+    return commitBuildId.trim();
+  }
+
+  return 'dev-local';
+}
+
+function appendBuildIdToDiagnosticMessage(message: string, buildId: string): string {
+  return `${message} [build:${buildId}]`;
 }
 
 export default function App() {
@@ -43,6 +75,7 @@ export default function App() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [meals, setMeals] = useState<Record<string, MealPlan>>({});
   const [logs, setLogs] = useState<PantryLog[]>([]);
+  const [unknownIngredientQueue, setUnknownIngredientQueue] = useState<UnknownIngredientQueueItem[]>([]);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
@@ -52,9 +85,10 @@ export default function App() {
   const cookLanguage: UiLanguage = householdData?.cookLanguage ?? 'hi';
   const activeLanguage: UiLanguage = isOwner ? ownerLanguage : cookLanguage;
   const appCopy = getAppCopy(activeLanguage);
+  const appBuildId = resolveAppBuildId();
   const shellWidthClass = isOwner ? 'max-w-7xl' : 'max-w-5xl';
   const shellSectionClass = `${shellWidthClass} mx-auto px-4 md:px-6`;
-  const shellMainClass = `${shellWidthClass} mx-auto p-4 md:p-6 pb-24`;
+  const shellMainClass = `${shellWidthClass} mx-auto px-4 pb-24 pt-6 md:px-6`;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -80,9 +114,12 @@ export default function App() {
     let inventoryUnsub: Unsubscribe | null = null;
     let mealsUnsub: Unsubscribe | null = null;
     let logsUnsub: Unsubscribe | null = null;
+    let unknownQueueUnsub: Unsubscribe | null = null;
+    let unknownQueueFallbackUnsub: Unsubscribe | null = null;
     let hasLoadedHousehold = false;
     let hasLoadedInventory = false;
     let hasLoadedMeals = false;
+    let hasLoadedUnknownQueue = false;
     let hasResolvedInitialView = false;
 
     const markInitialViewReady = (): void => {
@@ -90,7 +127,7 @@ export default function App() {
         return;
       }
 
-      if (hasLoadedHousehold && hasLoadedInventory && hasLoadedMeals) {
+      if (hasLoadedHousehold && hasLoadedInventory && hasLoadedMeals && hasLoadedUnknownQueue) {
         hasResolvedInitialView = true;
         setIsDataLoaded(true);
         setIsAuthReady(true);
@@ -181,6 +218,140 @@ export default function App() {
             setUiFeedback({ kind: 'error', message: 'Failed to load activity logs.' });
           },
         );
+
+        const handleUnknownQueueLoaded = (items: UnknownIngredientQueueItem[]): void => {
+          setUnknownIngredientQueue(items);
+          hasLoadedUnknownQueue = true;
+          markInitialViewReady();
+        };
+
+        const unknownQueuePath = `households/${resolved.householdId}/unknownIngredientQueue`;
+        const targetFingerprint = buildUnknownQueueTargetFingerprint({
+          projectId: firebaseConfig.projectId,
+          databaseId: firebaseConfig.firestoreDatabaseId,
+          householdId: resolved.householdId,
+        });
+
+        const membershipProbeSnapshot = await getDoc(doc(db, 'households', resolved.householdId));
+        const membershipProbeData = membershipProbeSnapshot.exists()
+          ? (membershipProbeSnapshot.data() as HouseholdData)
+          : null;
+        const membershipProbeResult: HouseholdMembershipProbeResult = classifyHouseholdMembershipProbe({
+          householdExists: membershipProbeSnapshot.exists(),
+          householdOwnerId: membershipProbeData?.ownerId ?? null,
+          householdCookEmail: membershipProbeData?.cookEmail ?? null,
+          userUid: user.uid,
+          userEmail: user.email ?? null,
+        });
+
+        console.info('unknown_queue_runtime_target', {
+          projectId: firebaseConfig.projectId,
+          databaseId: firebaseConfig.firestoreDatabaseId,
+          buildId: appBuildId,
+          householdId: resolved.householdId,
+          uid: user.uid,
+          email: user.email ?? null,
+          path: unknownQueuePath,
+          targetFingerprint,
+          membershipProbeResult,
+        });
+
+        const subscribeUnknownQueueFallback = (): void => {
+          if (unknownQueueFallbackUnsub !== null) {
+            return;
+          }
+
+          unknownQueueFallbackUnsub = onSnapshot(
+            collection(db, `households/${resolved.householdId}/unknownIngredientQueue`),
+            (snapshot) => {
+              const queueItems = snapshot.docs.map((queueDoc) => ({
+                id: queueDoc.id,
+                ...(queueDoc.data() as Omit<UnknownIngredientQueueItem, 'id'>),
+              }));
+              handleUnknownQueueLoaded(sortUnknownIngredientQueueItemsByCreatedAt(queueItems));
+            },
+            (error) => {
+              const parsedError = toFirestoreListenerErrorInfo(error);
+              console.error('unknown_queue_snapshot_fallback_failed', {
+                error,
+                householdId: resolved.householdId,
+                code: parsedError.code,
+                message: parsedError.message,
+                projectId: firebaseConfig.projectId,
+                databaseId: firebaseConfig.firestoreDatabaseId,
+                buildId: appBuildId,
+                uid: user.uid,
+                email: user.email ?? null,
+                path: unknownQueuePath,
+                targetFingerprint,
+                membershipProbeResult,
+              });
+              setUiFeedback({
+                kind: 'error',
+                message: appendBuildIdToDiagnosticMessage(
+                  getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
+                  appBuildId,
+                ),
+              });
+              hasLoadedUnknownQueue = true;
+              markInitialViewReady();
+            },
+          );
+        };
+
+        unknownQueueUnsub = onSnapshot(
+          query(collection(db, `households/${resolved.householdId}/unknownIngredientQueue`), orderBy('createdAt', 'desc')),
+          (snapshot) => {
+            const queueItems = snapshot.docs.map((queueDoc) => ({
+              id: queueDoc.id,
+              ...(queueDoc.data() as Omit<UnknownIngredientQueueItem, 'id'>),
+            }));
+            handleUnknownQueueLoaded(queueItems);
+          },
+          (error) => {
+            const parsedError = toFirestoreListenerErrorInfo(error);
+            console.error('unknown_queue_snapshot_failed', {
+              error,
+              householdId: resolved.householdId,
+              code: parsedError.code,
+              message: parsedError.message,
+              projectId: firebaseConfig.projectId,
+              databaseId: firebaseConfig.firestoreDatabaseId,
+              buildId: appBuildId,
+              uid: user.uid,
+              email: user.email ?? null,
+              path: unknownQueuePath,
+              targetFingerprint,
+              membershipProbeResult,
+            });
+
+            if (isFirestoreFailedPreconditionError(parsedError)) {
+              if (unknownQueueUnsub !== null) {
+                unknownQueueUnsub();
+                unknownQueueUnsub = null;
+              }
+              setUiFeedback({
+                kind: 'error',
+                message: appendBuildIdToDiagnosticMessage(
+                  getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
+                  appBuildId,
+                ),
+              });
+              subscribeUnknownQueueFallback();
+              return;
+            }
+
+            setUiFeedback({
+              kind: 'error',
+              message: appendBuildIdToDiagnosticMessage(
+                getUnknownQueueLoadErrorMessage(parsedError, membershipProbeResult),
+                appBuildId,
+              ),
+            });
+            hasLoadedUnknownQueue = true;
+            markInitialViewReady();
+          },
+        );
       } catch (error) {
         console.error('household_initialize_failed', { error, userId: user.uid });
         setUiFeedback({ kind: 'error', message: 'Failed to initialize household data.' });
@@ -203,8 +374,14 @@ export default function App() {
       if (logsUnsub) {
         logsUnsub();
       }
+      if (unknownQueueUnsub) {
+        unknownQueueUnsub();
+      }
+      if (unknownQueueFallbackUnsub) {
+        unknownQueueFallbackUnsub();
+      }
     };
-  }, [user]);
+  }, [user, appBuildId]);
 
   const handleUpdateInventory = async (id: string, newStatus: InventoryStatus, requestedQuantity?: string): Promise<void> => {
     if (!user || !householdId) {
@@ -262,7 +439,7 @@ export default function App() {
     }
   };
 
-  const handleAddUnlistedItem = async (
+  const handleQueueUnknownIngredient = async (
     name: string,
     status: InventoryStatus,
     category: string,
@@ -273,7 +450,7 @@ export default function App() {
     }
 
     try {
-      await addUnlistedItemWithLog({
+      await queueUnknownIngredient({
         db,
         householdId,
         name,
@@ -282,10 +459,48 @@ export default function App() {
         requestedQuantity,
         role,
       });
-      setUiFeedback({ kind: 'success', message: 'Added new requested ingredient.' });
+      setUiFeedback({ kind: 'success', message: 'Queued unknown ingredient for owner review.' });
     } catch (error) {
-      console.error('inventory_add_unlisted_failed', { error, householdId, name, status, category, requestedQuantity });
-      setUiFeedback({ kind: 'error', message: toUserFacingError(error, 'Could not add requested ingredient.') });
+      console.error('unknown_ingredient_queue_add_failed', { error, householdId, name, status, category, requestedQuantity });
+      setUiFeedback({ kind: 'error', message: toUserFacingError(error, 'Could not queue unknown ingredient.') });
+    }
+  };
+
+  const handlePromoteUnknownIngredient = async (queueItem: UnknownIngredientQueueItem): Promise<void> => {
+    if (!user || !householdId) {
+      return;
+    }
+
+    try {
+      await promoteUnknownIngredientQueueItem({
+        db,
+        householdId,
+        queueItem,
+        role,
+      });
+      setUiFeedback({ kind: 'success', message: 'Queued ingredient promoted to pantry.' });
+    } catch (error) {
+      console.error('unknown_ingredient_promote_failed', { error, householdId, queueItemId: queueItem.id });
+      setUiFeedback({ kind: 'error', message: toUserFacingError(error, 'Could not promote queued ingredient.') });
+    }
+  };
+
+  const handleDismissUnknownIngredient = async (queueItem: UnknownIngredientQueueItem): Promise<void> => {
+    if (!user || !householdId) {
+      return;
+    }
+
+    try {
+      await dismissUnknownIngredientQueueItem({
+        db,
+        householdId,
+        queueItem,
+        role,
+      });
+      setUiFeedback({ kind: 'success', message: 'Queued ingredient dismissed.' });
+    } catch (error) {
+      console.error('unknown_ingredient_dismiss_failed', { error, householdId, queueItemId: queueItem.id });
+      setUiFeedback({ kind: 'error', message: toUserFacingError(error, 'Could not dismiss queued ingredient.') });
     }
   };
 
@@ -440,6 +655,9 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 sm:justify-end">
+              <div className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-wide text-orange-50/90 sm:block">
+                Build {appBuildId}
+              </div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-sm font-semibold text-white shadow-inner">
                 {isOwner ? <User size={16} /> : <ChefHat size={16} />}
                 <span>{isOwner ? appCopy.ownerRole : appCopy.cookRole}</span>
@@ -472,71 +690,96 @@ export default function App() {
 
       {role === 'owner' && householdData && (
         <div className={`${shellSectionClass} pt-6`}>
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-bold text-stone-800">{appCopy.householdSettings}</h3>
-              <p className="text-sm text-stone-500">
-                {householdData.cookEmail
-                  ? `Cook access granted to: ${householdData.cookEmail}`
-                  : appCopy.inviteCookHint}
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">{appCopy.ownerLanguageLabel}</span>
-                  <select
-                    value={ownerLanguage}
-                    onChange={(event) => void handleUpdateLanguagePreference('ownerLanguage', event.target.value as UiLanguage)}
-                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                    data-testid="owner-language-select"
-                  >
-                    <option value="en">English + Hinglish helper</option>
-                    <option value="hi">Hindi + Hinglish helper</option>
-                  </select>
-                  <span className="text-xs text-stone-500">{appCopy.ownerLanguageHint}</span>
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">{appCopy.cookLanguageLabel}</span>
-                  <select
-                    value={cookLanguage}
-                    onChange={(event) => void handleUpdateLanguagePreference('cookLanguage', event.target.value as UiLanguage)}
-                    className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                    data-testid="cook-language-select"
-                  >
-                    <option value="hi">Hindi + Hinglish helper</option>
-                    <option value="en">English + Hinglish helper</option>
-                  </select>
-                  <span className="text-xs text-stone-500">{appCopy.cookLanguageHint}</span>
-                </label>
+          <section className="rounded-[28px] border border-stone-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm md:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-2xl space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">{appCopy.householdSettings}</p>
+                <h3 className="text-2xl font-semibold tracking-tight text-stone-900">{appCopy.householdSettings}</h3>
+                <p className="text-sm leading-6 text-stone-500">{appCopy.householdSettingsHelper}</p>
+              </div>
+              {householdData.cookEmail ? (
+                <div className="inline-flex max-w-full items-center gap-2 self-start rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 shadow-sm">
+                  <Mail size={14} />
+                  <span className="truncate">{householdData.cookEmail}</span>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
+              <div className="rounded-[24px] border border-stone-200/80 bg-stone-50/70 p-4 md:p-5">
+                <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-stone-800">
+                  <Globe2 size={16} className="text-orange-600" />
+                  <span>{appCopy.languageProfiles}</span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <label className="flex h-full flex-col gap-2 rounded-[20px] border border-stone-200/80 bg-white p-4 shadow-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">{appCopy.ownerLanguageLabel}</span>
+                    <select
+                      value={ownerLanguage}
+                      onChange={(event) => void handleUpdateLanguagePreference('ownerLanguage', event.target.value as UiLanguage)}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-700 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                      data-testid="owner-language-select"
+                    >
+                      <option value="en">English + Hinglish helper</option>
+                      <option value="hi">Hindi + Hinglish helper</option>
+                    </select>
+                    <span className="text-xs leading-5 text-stone-500">{appCopy.ownerLanguageHint}</span>
+                  </label>
+                  <label className="flex h-full flex-col gap-2 rounded-[20px] border border-stone-200/80 bg-white p-4 shadow-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">{appCopy.cookLanguageLabel}</span>
+                    <select
+                      value={cookLanguage}
+                      onChange={(event) => void handleUpdateLanguagePreference('cookLanguage', event.target.value as UiLanguage)}
+                      className="rounded-xl border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-700 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                      data-testid="cook-language-select"
+                    >
+                      <option value="hi">Hindi + Hinglish helper</option>
+                      <option value="en">English + Hinglish helper</option>
+                    </select>
+                    <span className="text-xs leading-5 text-stone-500">{appCopy.cookLanguageHint}</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-stone-200/80 bg-stone-50/70 p-4 md:p-5">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-stone-800">
+                    <User size={16} className="text-orange-600" />
+                    <span>{appCopy.cookAccess}</span>
+                  </div>
+                  <p className="text-sm leading-6 text-stone-500">{householdData.cookEmail ? householdData.cookEmail : appCopy.inviteCookHint}</p>
+                </div>
+
+                <div className="mt-4">
+                  {householdData.cookEmail ? (
+                    <button
+                      onClick={handleRemoveCook}
+                      className="inline-flex w-full items-center justify-center rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-100 sm:w-auto"
+                    >
+                      {appCopy.removeCook}
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        type="email"
+                        placeholder={appCopy.inviteCookPlaceholder}
+                        value={inviteEmail}
+                        onChange={(event) => setInviteEmail(event.target.value)}
+                        className="w-full rounded-xl border border-stone-300 bg-white px-3 py-3 text-sm text-stone-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100 sm:min-w-[17rem]"
+                      />
+                      <button
+                        onClick={handleInviteCook}
+                        disabled={isInviting || !inviteEmail}
+                        className="inline-flex items-center justify-center rounded-xl bg-stone-900 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-stone-800 disabled:opacity-50"
+                      >
+                        {isInviting ? appCopy.inviting : appCopy.invite}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              {householdData.cookEmail ? (
-                <button
-                  onClick={handleRemoveCook}
-                  className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-bold hover:bg-red-100 transition-colors whitespace-nowrap"
-                >
-                  {appCopy.removeCook}
-                </button>
-              ) : (
-                <div className="flex w-full sm:w-auto gap-2">
-                  <input
-                    type="email"
-                    placeholder={appCopy.inviteCookPlaceholder}
-                    value={inviteEmail}
-                    onChange={(event) => setInviteEmail(event.target.value)}
-                    className="px-3 py-2 border border-stone-300 rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-orange-500 outline-none"
-                  />
-                  <button
-                    onClick={handleInviteCook}
-                    disabled={isInviting || !inviteEmail}
-                    className="px-4 py-2 bg-stone-800 text-white rounded-lg text-sm font-bold hover:bg-stone-700 transition-colors disabled:opacity-50 whitespace-nowrap"
-                  >
-                    {isInviting ? appCopy.inviting : appCopy.invite}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          </section>
         </div>
       )}
 
@@ -555,6 +798,9 @@ export default function App() {
             onDeleteInventoryItem={handleDeleteInventoryItem}
             onClearAnomaly={handleClearAnomaly}
             logs={logs}
+            unknownIngredientQueue={unknownIngredientQueue}
+            onPromoteUnknownIngredient={handlePromoteUnknownIngredient}
+            onDismissUnknownIngredient={handleDismissUnknownIngredient}
             language={ownerLanguage}
           />
         ) : (
@@ -562,7 +808,7 @@ export default function App() {
             meals={meals}
             inventory={inventory}
             onUpdateInventory={handleUpdateInventory}
-            onAddUnlistedItem={handleAddUnlistedItem}
+            onQueueUnknownIngredient={handleQueueUnknownIngredient}
             language={cookLanguage}
           />
         )}

@@ -1,4 +1,4 @@
-import { UiLanguage } from '../types';
+import { InventoryStatus, UiLanguage } from '../types';
 
 export interface AppCopy {
   ownerWorkspace: string;
@@ -11,11 +11,14 @@ export interface AppCopy {
   accessRemoved: string;
   accessRemovedDetail: string;
   householdSettings: string;
+  householdSettingsHelper: string;
   inviteCookHint: string;
   inviteCookPlaceholder: string;
   invite: string;
   inviting: string;
   removeCook: string;
+  languageProfiles: string;
+  cookAccess: string;
   ownerLanguageLabel: string;
   cookLanguageLabel: string;
   ownerLanguageHint: string;
@@ -42,6 +45,21 @@ export interface CookCopy {
   switchLabel: string;
 }
 
+export interface InventoryCopy {
+  statusLabels: Record<InventoryStatus, string>;
+  onGroceryList: string;
+  markRestocked: string;
+  addNote: string;
+  noteLabel: string;
+  saveNote: string;
+  quantityPlaceholder: string;
+  noteSaved: string;
+  groceryPendingCountLabel: string;
+  pantryAnomaliesCountLabel: string;
+  pantryReviewItemsCountLabel: string;
+  logMarkedAs: string;
+}
+
 const appCopyByLanguage: Record<UiLanguage, AppCopy> = {
   en: {
     ownerWorkspace: 'Owner workspace',
@@ -54,11 +72,14 @@ const appCopyByLanguage: Record<UiLanguage, AppCopy> = {
     accessRemoved: 'Access Removed',
     accessRemovedDetail: 'Your owner removed this cook access. Sign out and ask the owner to invite you again.',
     householdSettings: 'Household Settings',
+    householdSettingsHelper: 'Manage access and language preferences without leaving the owner workspace.',
     inviteCookHint: 'Invite your cook to sync the pantry.',
     inviteCookPlaceholder: "Cook's Gmail address",
     invite: 'Invite',
     inviting: 'Inviting...',
     removeCook: 'Remove Cook',
+    languageProfiles: 'Language profiles',
+    cookAccess: 'Cook access',
     ownerLanguageLabel: 'Owner language profile',
     cookLanguageLabel: 'Cook language profile',
     ownerLanguageHint: 'English first with Hinglish helper is recommended for owner operations.',
@@ -75,11 +96,14 @@ const appCopyByLanguage: Record<UiLanguage, AppCopy> = {
     accessRemoved: 'एक्सेस हटाया गया',
     accessRemovedDetail: 'ओनर ने यह कुक एक्सेस हटा दिया है। साइन आउट करें और फिर से इनवाइट के लिए कहें।',
     householdSettings: 'घर की सेटिंग्स',
+    householdSettingsHelper: 'ओनर वर्कस्पेस छोड़े बिना एक्सेस और भाषा पसंद संभालें।',
     inviteCookHint: 'पेंट्री सिंक के लिए अपने कुक को इनवाइट करें।',
     inviteCookPlaceholder: 'कुक का Gmail पता',
     invite: 'इनवाइट',
     inviting: 'इनवाइट भेज रहे हैं...',
     removeCook: 'कुक हटाएँ',
+    languageProfiles: 'भाषा प्रोफाइल',
+    cookAccess: 'कुक एक्सेस',
     ownerLanguageLabel: 'ओनर भाषा प्रोफाइल',
     cookLanguageLabel: 'कुक भाषा प्रोफाइल',
     ownerLanguageHint: 'ओनर काम के लिए English + Hinglish helper सबसे आसान रहता है।',
@@ -129,6 +153,45 @@ const cookCopyByLanguage: Record<UiLanguage, CookCopy> = {
   },
 };
 
+const inventoryCopyByLanguage: Record<UiLanguage, InventoryCopy> = {
+  en: {
+    statusLabels: {
+      'in-stock': 'In Stock',
+      low: 'Running Low',
+      out: 'Out of Stock',
+    },
+    onGroceryList: 'On List',
+    markRestocked: 'Mark Restocked',
+    addNote: 'Add Note',
+    noteLabel: 'Note',
+    saveNote: 'Save note',
+    quantityPlaceholder: 'Quantity? (e.g. 2kg)',
+    noteSaved: 'Note saved',
+    groceryPendingCountLabel: 'pending grocery items',
+    pantryAnomaliesCountLabel: 'pantry anomalies',
+    pantryReviewItemsCountLabel: 'pantry review items',
+    logMarkedAs: 'marked',
+  },
+  hi: {
+    statusLabels: {
+      'in-stock': 'स्टॉक में है',
+      low: 'कम हो रहा है',
+      out: 'खत्म हो गया',
+    },
+    onGroceryList: 'सूची में है',
+    markRestocked: 'फिर से भर गया',
+    addNote: 'नोट जोड़ें',
+    noteLabel: 'नोट',
+    saveNote: 'नोट सेव करें',
+    quantityPlaceholder: 'कितना चाहिए? (उदा: 2kg)',
+    noteSaved: 'नोट सेव हो गया',
+    groceryPendingCountLabel: 'किराना आइटम लंबित',
+    pantryAnomaliesCountLabel: 'पेंट्री विसंगतियां',
+    pantryReviewItemsCountLabel: 'पेंट्री समीक्षा आइटम',
+    logMarkedAs: 'मार्क किया',
+  },
+};
+
 export function getAppCopy(language: UiLanguage): AppCopy {
   return appCopyByLanguage[language];
 }
@@ -139,4 +202,8 @@ export function getOwnerCopy(language: UiLanguage): OwnerCopy {
 
 export function getCookCopy(language: UiLanguage): CookCopy {
   return cookCopyByLanguage[language];
+}
+
+export function getInventoryCopy(language: UiLanguage): InventoryCopy {
+  return inventoryCopyByLanguage[language];
 }

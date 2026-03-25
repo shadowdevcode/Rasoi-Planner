@@ -31,6 +31,7 @@ interface EmulatorHostPort {
 type TestAuthContext = ReturnType<RulesTestEnvironment['authenticatedContext']>;
 type TestUnauthContext = ReturnType<RulesTestEnvironment['unauthenticatedContext']>;
 type TestFirestore = ReturnType<TestAuthContext['firestore']>;
+type InventoryStatusValue = 'in-stock' | 'low' | 'out';
 
 const projectId = 'demo-rasoi-planner';
 const ownerUid = 'owner-uid-1';
@@ -102,6 +103,33 @@ async function seedInventoryItem(testEnv: RulesTestEnvironment): Promise<void> {
   });
 }
 
+interface InventorySeedInput {
+  itemId: string;
+  name: string;
+  status: InventoryStatusValue;
+  lastUpdated: string;
+  updatedBy: 'owner' | 'cook';
+  requestedQuantity: string;
+}
+
+async function seedInventoryItemWithStatus(testEnv: RulesTestEnvironment, input: InventorySeedInput): Promise<void> {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const adminDb = context.firestore();
+    await setDoc(doc(adminDb, 'households', householdId, 'inventory', input.itemId), {
+      name: input.name,
+      category: 'Staples',
+      status: input.status,
+      icon: '🍅',
+      lastUpdated: input.lastUpdated,
+      updatedBy: input.updatedBy,
+      defaultQuantity: '1kg',
+      requestedQuantity: input.requestedQuantity,
+      verificationNeeded: false,
+      anomalyReason: '',
+    });
+  });
+}
+
 async function seedLogItem(testEnv: RulesTestEnvironment): Promise<void> {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const adminDb = context.firestore();
@@ -112,6 +140,21 @@ async function seedLogItem(testEnv: RulesTestEnvironment): Promise<void> {
       newStatus: 'low',
       timestamp: '2026-03-23T09:00:00.000Z',
       role: 'owner',
+    });
+  });
+}
+
+async function seedUnknownQueueItem(testEnv: RulesTestEnvironment): Promise<void> {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const adminDb = context.firestore();
+    await setDoc(doc(adminDb, 'households', householdId, 'unknownIngredientQueue', 'queue-item-1'), {
+      name: 'Curry Leaves',
+      category: 'veggies',
+      status: 'open',
+      requestedStatus: 'low',
+      createdAt: '2026-03-25T09:00:00.000Z',
+      createdBy: 'cook',
+      requestedQuantity: '1 bunch',
     });
   });
 }
@@ -185,6 +228,25 @@ async function testInvitedCookCanReadHouseholdInventoryAndLogs(testEnv: RulesTes
   await assertSucceeds(getDocs(collection(cookDb, 'households', householdId, 'logs')));
 }
 
+async function testOwnerAndCookCanReadUnknownIngredientQueue(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedUnknownQueueItem(testEnv);
+
+  const ownerDb = getAuthenticatedDb(testEnv, ownerUid, ownerEmail);
+  const cookDb = getAuthenticatedDb(testEnv, cookUid, cookEmail);
+
+  await assertSucceeds(getDocs(collection(ownerDb, 'households', householdId, 'unknownIngredientQueue')));
+  await assertSucceeds(getDocs(collection(cookDb, 'households', householdId, 'unknownIngredientQueue')));
+}
+
+async function testNonMemberCannotReadUnknownIngredientQueue(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedUnknownQueueItem(testEnv);
+
+  const intruderDb = getAuthenticatedDb(testEnv, intruderUid, 'intruder@example.com');
+  await assertFails(getDocs(collection(intruderDb, 'households', householdId, 'unknownIngredientQueue')));
+}
+
 async function testInvitedCookCannotWriteMealsOrDeleteInventory(testEnv: RulesTestEnvironment): Promise<void> {
   await seedOwnerHousehold(testEnv, cookEmail);
   await seedInventoryItem(testEnv);
@@ -241,6 +303,112 @@ async function testInventoryAndLogWritesEnforceRules(testEnv: RulesTestEnvironme
   await assertFails(invalidBatch.commit());
 }
 
+async function testOwnerCanWriteMatchingInventoryAndLogTransition(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedInventoryItem(testEnv);
+
+  const ownerDb = getAuthenticatedDb(testEnv, ownerUid, ownerEmail);
+  const timestamp = '2026-03-25T11:00:00.000Z';
+  const batch = writeBatch(ownerDb);
+  batch.update(doc(ownerDb, 'households', householdId, 'inventory', 'tomatoes'), {
+    status: 'low',
+    lastUpdated: timestamp,
+    updatedBy: 'owner',
+    requestedQuantity: '2kg',
+  });
+  batch.set(doc(ownerDb, 'households', householdId, 'logs', 'log-owner-low'), {
+    itemId: 'tomatoes',
+    itemName: 'Tomatoes',
+    oldStatus: 'in-stock',
+    newStatus: 'low',
+    timestamp,
+    role: 'owner',
+  });
+
+  await assertSucceeds(batch.commit());
+}
+
+async function testCookCanWriteMatchingInventoryAndLogTransition(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedInventoryItemWithStatus(testEnv, {
+    itemId: 'atta',
+    name: 'Atta',
+    status: 'low',
+    lastUpdated: '2026-03-24T08:00:00.000Z',
+    updatedBy: 'owner',
+    requestedQuantity: '5kg',
+  });
+
+  const cookDb = getAuthenticatedDb(testEnv, cookUid, cookEmail);
+  const timestamp = '2026-03-25T11:05:00.000Z';
+  const batch = writeBatch(cookDb);
+  batch.update(doc(cookDb, 'households', householdId, 'inventory', 'atta'), {
+    status: 'out',
+    lastUpdated: timestamp,
+    updatedBy: 'cook',
+    requestedQuantity: '3kg',
+  });
+  batch.set(doc(cookDb, 'households', householdId, 'logs', 'log-cook-out'), {
+    itemId: 'atta',
+    itemName: 'Atta',
+    oldStatus: 'low',
+    newStatus: 'out',
+    timestamp,
+    role: 'cook',
+  });
+
+  await assertSucceeds(batch.commit());
+}
+
+async function testMismatchedLogStatusIsRejected(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedInventoryItem(testEnv);
+
+  const ownerDb = getAuthenticatedDb(testEnv, ownerUid, ownerEmail);
+  const timestamp = '2026-03-25T11:10:00.000Z';
+  const batch = writeBatch(ownerDb);
+  batch.update(doc(ownerDb, 'households', householdId, 'inventory', 'tomatoes'), {
+    status: 'low',
+    lastUpdated: timestamp,
+    updatedBy: 'owner',
+    requestedQuantity: '2kg',
+  });
+  batch.set(doc(ownerDb, 'households', householdId, 'logs', 'log-mismatch-status'), {
+    itemId: 'tomatoes',
+    itemName: 'Tomatoes',
+    oldStatus: 'in-stock',
+    newStatus: 'out',
+    timestamp,
+    role: 'owner',
+  });
+
+  await assertFails(batch.commit());
+}
+
+async function testUpdatedByRoleMismatchIsRejected(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedInventoryItem(testEnv);
+
+  const cookDb = getAuthenticatedDb(testEnv, cookUid, cookEmail);
+  const batch = writeBatch(cookDb);
+  batch.update(doc(cookDb, 'households', householdId, 'inventory', 'tomatoes'), {
+    status: 'low',
+    lastUpdated: '2026-03-25T11:15:00.000Z',
+    updatedBy: 'owner',
+    requestedQuantity: '2kg',
+  });
+  batch.set(doc(cookDb, 'households', householdId, 'logs', 'log-role-mismatch'), {
+    itemId: 'tomatoes',
+    itemName: 'Tomatoes',
+    oldStatus: 'in-stock',
+    newStatus: 'low',
+    timestamp: '2026-03-25T11:15:00.000Z',
+    role: 'cook',
+  });
+
+  await assertFails(batch.commit());
+}
+
 async function testLegacyUsersPathRestrictedByUid(testEnv: RulesTestEnvironment): Promise<void> {
   const userADb = getAuthenticatedDb(testEnv, userAUid, 'legacya@example.com');
   const userBDb = getAuthenticatedDb(testEnv, userBUid, 'legacyb@example.com');
@@ -260,6 +428,49 @@ async function testLegacyUsersPathRestrictedByUid(testEnv: RulesTestEnvironment)
   await assertFails(
     setDoc(doc(userBDb, 'users', userAUid, 'settings', 'main'), {
       theme: 'dark',
+    }),
+  );
+}
+
+async function testCookCanCreateUnknownQueueItemButCannotResolve(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  const cookDb = getAuthenticatedDb(testEnv, cookUid, cookEmail);
+
+  await assertSucceeds(
+    setDoc(doc(cookDb, 'households', householdId, 'unknownIngredientQueue', 'queue-item-cook'), {
+      name: 'Curry Leaves',
+      category: 'veggies',
+      status: 'open',
+      requestedStatus: 'low',
+      createdAt: '2026-03-25T10:00:00.000Z',
+      createdBy: 'cook',
+      requestedQuantity: '1 bunch',
+    }),
+  );
+
+  await seedUnknownQueueItem(testEnv);
+  await assertFails(
+    updateDoc(doc(cookDb, 'households', householdId, 'unknownIngredientQueue', 'queue-item-1'), {
+      status: 'resolved',
+      resolution: 'dismissed',
+      resolvedAt: '2026-03-25T10:05:00.000Z',
+      resolvedBy: 'cook',
+    }),
+  );
+}
+
+async function testOwnerCanResolveUnknownQueueItemWithValidTransition(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedUnknownQueueItem(testEnv);
+  const ownerDb = getAuthenticatedDb(testEnv, ownerUid, ownerEmail);
+
+  await assertSucceeds(
+    updateDoc(doc(ownerDb, 'households', householdId, 'unknownIngredientQueue', 'queue-item-1'), {
+      status: 'resolved',
+      resolution: 'promoted',
+      resolvedAt: '2026-03-25T10:10:00.000Z',
+      resolvedBy: 'owner',
+      promotedInventoryItemId: 'inventory-123',
     }),
   );
 }
@@ -297,6 +508,14 @@ async function runAllTests(testEnv: RulesTestEnvironment): Promise<void> {
       run: testInvitedCookCanReadHouseholdInventoryAndLogs,
     },
     {
+      name: 'Owner and invited cook can read unknown ingredient queue',
+      run: testOwnerAndCookCanReadUnknownIngredientQueue,
+    },
+    {
+      name: 'Non-member cannot read unknown ingredient queue',
+      run: testNonMemberCannotReadUnknownIngredientQueue,
+    },
+    {
       name: 'Invited cook cannot write meals or delete inventory',
       run: testInvitedCookCannotWriteMealsOrDeleteInventory,
     },
@@ -305,8 +524,32 @@ async function runAllTests(testEnv: RulesTestEnvironment): Promise<void> {
       run: testInventoryAndLogWritesEnforceRules,
     },
     {
+      name: 'Owner can write matching inventory/log transition',
+      run: testOwnerCanWriteMatchingInventoryAndLogTransition,
+    },
+    {
+      name: 'Cook can write matching inventory/log transition',
+      run: testCookCanWriteMatchingInventoryAndLogTransition,
+    },
+    {
+      name: 'Mismatched log status is rejected',
+      run: testMismatchedLogStatusIsRejected,
+    },
+    {
+      name: 'Role mismatch on inventory updatedBy is rejected',
+      run: testUpdatedByRoleMismatchIsRejected,
+    },
+    {
       name: 'Legacy users path is restricted by uid',
       run: testLegacyUsersPathRestrictedByUid,
+    },
+    {
+      name: 'Cook can create unknown queue item but cannot resolve it',
+      run: testCookCanCreateUnknownQueueItemButCannotResolve,
+    },
+    {
+      name: 'Owner can resolve unknown queue item with valid transition',
+      run: testOwnerCanResolveUnknownQueueItemWithValidTransition,
     },
   ];
 
