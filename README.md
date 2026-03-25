@@ -206,7 +206,19 @@ These constraints are enforced in `firestore.rules` and validated by `test/rules
 ### Firebase
 - Firestore security rules source: `firestore.rules`
 - Local emulator config: `firebase.json`
+- App uses Firestore named database: `ai-studio-3900af62-0bf5-496a-a136-d1c8a0c4b8bd`
 - Confirm production Firebase Auth domain setup before release (Google provider and authorized domains)
+
+### Production Firestore Rules Runbook
+1. Authenticate Firebase CLI:
+   - `npx firebase login`
+2. Deploy production Firestore rules:
+   - `npm run rules:deploy:prod`
+3. Validate production owner view:
+   - Sign in as owner and open the pantry/unknown queue section.
+   - Confirm no `Unknown ingredient queue access denied` banner appears.
+4. Optional deploy diagnostics:
+   - `npm run rules:deploy:prod:dry`
 
 ## GitHub-Vercel Sync Workflow
 
@@ -260,6 +272,11 @@ This project uses GitHub as the deployment source of truth.
 
 ### Firestore rules tests fail with Java/emulator error
 - Install Java 17+ and confirm `java -version` resolves correctly in shell.
+
+### `Unknown ingredient queue access denied. Deploy latest Firestore rules and retry.`
+- Ensure Firebase CLI is authenticated: `npx firebase login`
+- Deploy rules to production (includes named Firestore DB target): `npm run rules:deploy:prod`
+- Retry owner view and confirm unknown queue loads.
 
 ### Google sign-in popup fails locally
 - Add `localhost` / `127.0.0.1` to Firebase Auth authorized domains.

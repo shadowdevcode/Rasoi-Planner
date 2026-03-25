@@ -12,6 +12,8 @@
     "lint": "tsc --noEmit",
     "unit:test": "node --import tsx test/unit/run.ts",
     "rules:test": "node test/rules/check-java.mjs && firebase emulators:exec --only firestore --project demo-rasoi-planner \"tsx test/rules/run.ts\"",
+    "rules:deploy:prod": "npx firebase deploy --only firestore:rules --project gen-lang-client-0862152879",
+    "rules:deploy:prod:dry": "npx firebase deploy --only firestore:rules --project gen-lang-client-0862152879 --debug",
     "e2e": "node test/e2e/run.mjs",
     "e2e:headed": "E2E_HEADLESS=false node test/e2e/run.mjs",
     "verify:local": "npm run lint && npm run unit:test && npm run build && npm run rules:test && npm run e2e",
