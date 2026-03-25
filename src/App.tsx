@@ -27,6 +27,12 @@ import {
 import { upsertMealField } from './services/mealService';
 import { HouseholdData, resolveOrCreateHousehold } from './services/householdService';
 import { getAppCopy } from './i18n/copy';
+import {
+  getUnknownQueueLoadErrorMessage,
+  isFirestoreFailedPreconditionError,
+  sortUnknownIngredientQueueItemsByCreatedAt,
+  toFirestoreListenerErrorInfo,
+} from './utils/unknownQueue';
 
 interface UiFeedback {
   kind: 'success' | 'error';
@@ -84,6 +90,7 @@ export default function App() {
     let mealsUnsub: Unsubscribe | null = null;
     let logsUnsub: Unsubscribe | null = null;
     let unknownQueueUnsub: Unsubscribe | null = null;
+    let unknownQueueFallbackUnsub: Unsubscribe | null = null;
     let hasLoadedHousehold = false;
     let hasLoadedInventory = false;
     let hasLoadedMeals = false;
@@ -187,20 +194,70 @@ export default function App() {
           },
         );
 
+        const handleUnknownQueueLoaded = (items: UnknownIngredientQueueItem[]): void => {
+          setUnknownIngredientQueue(items);
+          hasLoadedUnknownQueue = true;
+          markInitialViewReady();
+        };
+
+        const subscribeUnknownQueueFallback = (): void => {
+          if (unknownQueueFallbackUnsub !== null) {
+            return;
+          }
+
+          unknownQueueFallbackUnsub = onSnapshot(
+            collection(db, `households/${resolved.householdId}/unknownIngredientQueue`),
+            (snapshot) => {
+              const queueItems = snapshot.docs.map((queueDoc) => ({
+                id: queueDoc.id,
+                ...(queueDoc.data() as Omit<UnknownIngredientQueueItem, 'id'>),
+              }));
+              handleUnknownQueueLoaded(sortUnknownIngredientQueueItemsByCreatedAt(queueItems));
+            },
+            (error) => {
+              const parsedError = toFirestoreListenerErrorInfo(error);
+              console.error('unknown_queue_snapshot_fallback_failed', {
+                error,
+                householdId: resolved.householdId,
+                code: parsedError.code,
+                message: parsedError.message,
+              });
+              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError) });
+              hasLoadedUnknownQueue = true;
+              markInitialViewReady();
+            },
+          );
+        };
+
         unknownQueueUnsub = onSnapshot(
           query(collection(db, `households/${resolved.householdId}/unknownIngredientQueue`), orderBy('createdAt', 'desc')),
           (snapshot) => {
-            const queueItems: UnknownIngredientQueueItem[] = snapshot.docs.map((queueDoc) => ({
+            const queueItems = snapshot.docs.map((queueDoc) => ({
               id: queueDoc.id,
               ...(queueDoc.data() as Omit<UnknownIngredientQueueItem, 'id'>),
             }));
-            setUnknownIngredientQueue(queueItems);
-            hasLoadedUnknownQueue = true;
-            markInitialViewReady();
+            handleUnknownQueueLoaded(queueItems);
           },
           (error) => {
-            console.error('unknown_queue_snapshot_failed', { error, householdId: resolved.householdId });
-            setUiFeedback({ kind: 'error', message: 'Failed to load unknown ingredient queue.' });
+            const parsedError = toFirestoreListenerErrorInfo(error);
+            console.error('unknown_queue_snapshot_failed', {
+              error,
+              householdId: resolved.householdId,
+              code: parsedError.code,
+              message: parsedError.message,
+            });
+
+            if (isFirestoreFailedPreconditionError(parsedError)) {
+              if (unknownQueueUnsub !== null) {
+                unknownQueueUnsub();
+                unknownQueueUnsub = null;
+              }
+              setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError) });
+              subscribeUnknownQueueFallback();
+              return;
+            }
+
+            setUiFeedback({ kind: 'error', message: getUnknownQueueLoadErrorMessage(parsedError) });
             hasLoadedUnknownQueue = true;
             markInitialViewReady();
           },
@@ -229,6 +286,9 @@ export default function App() {
       }
       if (unknownQueueUnsub) {
         unknownQueueUnsub();
+      }
+      if (unknownQueueFallbackUnsub) {
+        unknownQueueFallbackUnsub();
       }
     };
   }, [user]);

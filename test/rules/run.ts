@@ -228,6 +228,25 @@ async function testInvitedCookCanReadHouseholdInventoryAndLogs(testEnv: RulesTes
   await assertSucceeds(getDocs(collection(cookDb, 'households', householdId, 'logs')));
 }
 
+async function testOwnerAndCookCanReadUnknownIngredientQueue(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedUnknownQueueItem(testEnv);
+
+  const ownerDb = getAuthenticatedDb(testEnv, ownerUid, ownerEmail);
+  const cookDb = getAuthenticatedDb(testEnv, cookUid, cookEmail);
+
+  await assertSucceeds(getDocs(collection(ownerDb, 'households', householdId, 'unknownIngredientQueue')));
+  await assertSucceeds(getDocs(collection(cookDb, 'households', householdId, 'unknownIngredientQueue')));
+}
+
+async function testNonMemberCannotReadUnknownIngredientQueue(testEnv: RulesTestEnvironment): Promise<void> {
+  await seedOwnerHousehold(testEnv, cookEmail);
+  await seedUnknownQueueItem(testEnv);
+
+  const intruderDb = getAuthenticatedDb(testEnv, intruderUid, 'intruder@example.com');
+  await assertFails(getDocs(collection(intruderDb, 'households', householdId, 'unknownIngredientQueue')));
+}
+
 async function testInvitedCookCannotWriteMealsOrDeleteInventory(testEnv: RulesTestEnvironment): Promise<void> {
   await seedOwnerHousehold(testEnv, cookEmail);
   await seedInventoryItem(testEnv);
@@ -487,6 +506,14 @@ async function runAllTests(testEnv: RulesTestEnvironment): Promise<void> {
     {
       name: 'Invited cook can read household, inventory, and logs',
       run: testInvitedCookCanReadHouseholdInventoryAndLogs,
+    },
+    {
+      name: 'Owner and invited cook can read unknown ingredient queue',
+      run: testOwnerAndCookCanReadUnknownIngredientQueue,
+    },
+    {
+      name: 'Non-member cannot read unknown ingredient queue',
+      run: testNonMemberCannotReadUnknownIngredientQueue,
     },
     {
       name: 'Invited cook cannot write meals or delete inventory',

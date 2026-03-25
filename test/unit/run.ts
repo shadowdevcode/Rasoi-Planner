@@ -5,6 +5,13 @@ import { buildPantryLog } from '../../src/services/logService';
 import { sanitizeFirestorePayload } from '../../src/utils/firestorePayload';
 import { getIngredientNativeContextLabel, resolveIngredientVisual } from '../../src/utils/ingredientVisuals';
 import {
+  getUnknownQueueLoadErrorMessage,
+  isFirestoreFailedPreconditionError,
+  isFirestorePermissionDeniedError,
+  sortUnknownIngredientQueueItemsByCreatedAt,
+  toFirestoreListenerErrorInfo,
+} from '../../src/utils/unknownQueue';
+import {
   getLocalizedCategoryName,
   getPantryCategoryLabel,
   getPantryCategoryOptions,
@@ -333,6 +340,63 @@ function testIngredientVisualCategoryFallback(): void {
   assert.equal(visual.catalogMatch, undefined);
 }
 
+function testUnknownQueueErrorParsingAndMessaging(): void {
+  const permissionDenied = toFirestoreListenerErrorInfo({
+    code: 'permission-denied',
+    message: 'Missing or insufficient permissions.',
+    name: 'FirebaseError',
+  });
+  assert.equal(isFirestorePermissionDeniedError(permissionDenied), true);
+  assert.equal(getUnknownQueueLoadErrorMessage(permissionDenied), 'Unknown ingredient queue access denied. Deploy latest Firestore rules and retry.');
+
+  const failedPrecondition = toFirestoreListenerErrorInfo({
+    code: 'failed-precondition',
+    message: 'The query requires an index.',
+    name: 'FirebaseError',
+  });
+  assert.equal(isFirestoreFailedPreconditionError(failedPrecondition), true);
+  assert.equal(getUnknownQueueLoadErrorMessage(failedPrecondition), 'Unknown ingredient queue index is missing. Showing fallback order while index is provisioned.');
+
+  const unknownError = toFirestoreListenerErrorInfo(new Error('boom'));
+  assert.equal(isFirestoreFailedPreconditionError(unknownError), false);
+  assert.equal(isFirestorePermissionDeniedError(unknownError), false);
+  assert.equal(getUnknownQueueLoadErrorMessage(unknownError), 'Failed to load unknown ingredient queue.');
+}
+
+function testUnknownQueueFallbackSortOrder(): void {
+  const sorted = sortUnknownIngredientQueueItemsByCreatedAt([
+    {
+      id: 'queue-2',
+      name: 'A',
+      category: 'spices',
+      status: 'open',
+      requestedStatus: 'low',
+      createdAt: '2026-03-25T08:00:00.000Z',
+      createdBy: 'cook',
+    },
+    {
+      id: 'queue-1',
+      name: 'B',
+      category: 'staples',
+      status: 'open',
+      requestedStatus: 'low',
+      createdAt: '2026-03-25T10:00:00.000Z',
+      createdBy: 'owner',
+    },
+    {
+      id: 'queue-3',
+      name: 'C',
+      category: 'veggies',
+      status: 'open',
+      requestedStatus: 'out',
+      createdAt: 'invalid-date',
+      createdBy: 'cook',
+    },
+  ]);
+
+  assert.deepEqual(sorted.map((item) => item.id), ['queue-1', 'queue-2', 'queue-3']);
+}
+
 function run(): void {
   testPantryCategoryNormalization();
   testPantryCategoryLabels();
@@ -353,6 +417,8 @@ function run(): void {
   testIngredientNativeContextLabel();
   testIngredientVisualExistingIconFallback();
   testIngredientVisualCategoryFallback();
+  testUnknownQueueErrorParsingAndMessaging();
+  testUnknownQueueFallbackSortOrder();
   console.log('All unit tests passed.');
 }
 
